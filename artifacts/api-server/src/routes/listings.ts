@@ -11,8 +11,11 @@ import {
   ListListingsQueryParams,
 } from "@workspace/api-zod";
 import { makeSlug } from "../lib/slug";
+import { ObjectStorageService } from "../lib/objectStorage";
 
 const router: IRouter = Router();
+const MAX_LISTING_IMAGES = 5;
+const objectStorageService = new ObjectStorageService();
 
 router.get("/listings", async (req: Request, res: Response) => {
   const parsed = ListListingsQueryParams.safeParse(req.query);
@@ -122,9 +125,25 @@ router.post("/listings", async (req: Request, res: Response) => {
     return;
   }
   const body = parsed.data;
+  if (body.imageObjectPaths && body.imageObjectPaths.length > MAX_LISTING_IMAGES) {
+    res.status(400).json({ error: `At most ${MAX_LISTING_IMAGES} images allowed` });
+    return;
+  }
   const slug = makeSlug(body.titleAr);
 
-  const primaryImageUrl = body.imageObjectPaths?.[0] ?? null;
+  const normalizedPaths: string[] = [];
+  for (const rawPath of body.imageObjectPaths ?? []) {
+    try {
+      const normalized = await objectStorageService.trySetObjectEntityAclPolicy(
+        rawPath,
+        { owner: req.user.id, visibility: "public" },
+      );
+      normalizedPaths.push(normalized);
+    } catch (err) {
+      req.log.warn({ err, rawPath }, "Failed to set ACL on listing image");
+    }
+  }
+  const primaryImageUrl = normalizedPaths[0] ?? null;
 
   const [created] = await db
     .insert(listingsTable)
@@ -149,9 +168,9 @@ router.post("/listings", async (req: Request, res: Response) => {
     })
     .returning();
 
-  if (body.imageObjectPaths && body.imageObjectPaths.length > 0) {
+  if (normalizedPaths.length > 0) {
     await db.insert(listingImagesTable).values(
-      body.imageObjectPaths.map((path, idx) => ({
+      normalizedPaths.map((path, idx) => ({
         listingId: created.id,
         objectPath: path,
         sortOrder: idx,

@@ -9,7 +9,7 @@ interface I18nContextType {
   dir: "rtl" | "ltr";
 }
 
-const translations = {
+const translations: Record<Locale, Record<string, string>> = {
   ar: {
     "nav.home": "الرئيسية",
     "nav.news": "الأخبار",
@@ -122,7 +122,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   }, [locale]);
 
   const t = (key: string, params?: Record<string, string | number>) => {
-    let text = (translations[locale] as any)[key] || key;
+    let text = translations[locale][key] ?? key;
     if (params) {
       Object.entries(params).forEach(([k, v]) => {
         text = text.replace(`{{${k}}}`, String(v));

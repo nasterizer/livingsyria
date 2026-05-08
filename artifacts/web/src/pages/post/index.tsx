@@ -356,7 +356,7 @@ export default function PostListing() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <ObjectUploader
-                  maxNumberOfFiles={8}
+                  maxNumberOfFiles={5}
                   onGetUploadParameters={async (file) => {
                     const res = await fetch("/api/storage/uploads/request-url", {
                       method: "POST",
