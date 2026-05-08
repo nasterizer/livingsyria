@@ -126,3 +126,15 @@ id = "nQXZoZ-sbjs09r73END3c"
 uri = "file://artifacts/mockup-sandbox/public/images/ls-class-6.png"
 type = "image"
 title = "Modern camera product photo"
+
+[[generated]]
+id = "ld5Asx1yCUbxoZksE1rx5"
+uri = "file://artifacts/mobile/assets/images/icon.png"
+type = "image"
+title = "LivingSyria app icon"
+
+[[generated]]
+id = "BICzJfWVuKd-gfjWgwpEX"
+uri = "file://artifacts/mobile/assets/images/hero-banner.png"
+type = "image"
+title = "Syria hero banner"

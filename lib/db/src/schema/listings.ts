@@ -3,6 +3,7 @@ import {
   varchar,
   text,
   integer,
+  real,
   timestamp,
   boolean,
   index,
@@ -31,7 +32,9 @@ export const listingsTable = pgTable(
     listingType: varchar("listing_type").default("FREE").notNull(),
     viewCount: integer("view_count").default(0).notNull(),
     primaryImageUrl: varchar("primary_image_url"),
-    publishedAt: timestamp("published_at", { withTimezone: true }).defaultNow(),
+    moderationScore: real("moderation_score"),
+    moderationReason: text("moderation_reason"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

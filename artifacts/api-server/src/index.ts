@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { ingestFeeds } from "./lib/newsIngestion";
 
 const rawPort = process.env["PORT"];
 
@@ -22,4 +23,13 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+
+  const ONE_HOUR_MS = 60 * 60 * 1000;
+
+  setTimeout(() => {
+    ingestFeeds().catch((e) => logger.error({ err: e }, "Initial news ingestion failed"));
+    setInterval(() => {
+      ingestFeeds().catch((e) => logger.error({ err: e }, "Hourly news ingestion failed"));
+    }, ONE_HOUR_MS);
+  }, 5_000);
 });

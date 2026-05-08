@@ -12,6 +12,8 @@ import {
 } from "@workspace/api-zod";
 import { makeSlug } from "../lib/slug";
 import { ObjectStorageService } from "../lib/objectStorage";
+import { moderateListing } from "../lib/moderation";
+import { autoTranslateListing } from "../lib/translation";
 
 const router: IRouter = Router();
 const MAX_LISTING_IMAGES = 5;
@@ -105,7 +107,6 @@ router.get("/listings/:slug", async (req: Request, res: Response) => {
       .limit(1),
   ]);
 
-  // increment view count (fire-and-forget)
   db.update(listingsTable)
     .set({ viewCount: sql`${listingsTable.viewCount} + 1` })
     .where(eq(listingsTable.id, row.id))
@@ -163,8 +164,8 @@ router.post("/listings", async (req: Request, res: Response) => {
       city: body.city,
       district: body.district ?? null,
       primaryImageUrl,
-      status: "ACTIVE",
-      publishedAt: new Date(),
+      status: "PENDING_REVIEW",
+      publishedAt: null,
     })
     .returning();
 
@@ -177,6 +178,16 @@ router.post("/listings", async (req: Request, res: Response) => {
         isPrimary: idx === 0,
       })),
     );
+  }
+
+  moderateListing(created.id, created.titleAr, created.descriptionAr).catch((err) => {
+    req.log.error({ err, listingId: created.id }, "Moderation failed");
+  });
+
+  if (!created.titleEn || !created.descriptionEn) {
+    autoTranslateListing(created.id).catch((err) => {
+      req.log.error({ err, listingId: created.id }, "Auto-translation failed");
+    });
   }
 
   res.status(201).json({ data: created });
