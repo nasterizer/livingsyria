@@ -1,0 +1,1845 @@
+================================================================================
+LIVINGSYRIA.COM — FULL MVP BUILD PROMPT
+For: Replit Agent
+Version: 1.0 (Architect-reviewed)
+================================================================================
+
+Build a full-stack bilingual (Arabic + English) digital platform called
+LivingSyria — Syria's definitive online destination combining AI-curated news,
+classifieds, real estate, vehicle listings, jobs, and a business directory.
+It serves Syrians in-country and the global Syrian diaspora (12M+ users).
+
+The platform is a production-grade application. Every implementation decision
+below is deliberate. Do not substitute libraries, change folder names, or skip
+any endpoint. Follow this specification exactly.
+
+================================================================================
+SECTION 1 — WHAT YOU ARE BUILDING
+================================================================================
+
+Components:
+- A responsive bilingual web application (Next.js 14, App Router)
+- A REST API backend (Node.js + Express + TypeScript)
+- A PostgreSQL database via Prisma ORM
+- A Redis cache layer
+- Firebase Authentication (email/password + Google OAuth)
+- GCP Cloud Storage integration for image uploads (signed URL pattern)
+- A full admin portal for content moderation and management
+
+Core principles:
+- Arabic-first: Arabic is always required on all content fields. English is optional.
+- All public pages server-side rendered (SSR) for SEO
+- Mobile-responsive: all pages work at 375px width minimum
+- RTL layout for Arabic, LTR for English — controlled by [locale] URL segment
+- All API routes strictly under /api/v1/
+- API server never handles binary image data (signed URL upload pattern)
+
+Brand identity:
+- Primary:    #1a3a5c  (Deep Navy)   — headers, nav, CTAs
+- Accent:     #c0392b  (Syrian Red)  — badges, alerts, price tags
+- Gold:       #e8a838              — featured badges, premium labels
+- Background: #f4f6f9  (Off-white)  — page background
+- White:      #ffffff              — cards, inputs
+- Display font (EN): Playfair Display
+- Body font (EN):    IBM Plex Sans
+- Arabic font:       Noto Naskh Arabic
+
+================================================================================
+SECTION 2 — TECHNOLOGY STACK (DO NOT DEVIATE)
+================================================================================
+
+Frontend:         Next.js 14.x (App Router), TypeScript 5.x strict mode
+Styling:          Tailwind CSS 3.x + tailwind-merge + clsx
+UI components:    shadcn/ui (install per component as needed)
+State:            Zustand 4.x (auth + UI state only)
+Server state:     @tanstack/react-query 5.x (all API calls)
+i18n:             next-intl 3.x (AR and EN locales)
+
+Backend:          Express 4.x + TypeScript
+ORM:              Prisma 5.x
+Database:         PostgreSQL 15 (via DATABASE_URL env var)
+Cache:            ioredis 5.x (via REDIS_URL env var)
+Auth:             Firebase Auth — Admin SDK (backend) + Web SDK (frontend)
+File storage:     @google-cloud/storage 7.x (GCP Cloud Storage)
+Payments:         Stripe 14.x
+Logging:          Pino + pino-http (structured JSON)
+Validation:       Zod 3.x on ALL API inputs
+HTTP client:      Axios + axios-retry (frontend)
+Email:            @sendgrid/mail (transactional)
+Push:             Firebase Cloud Messaging
+AI — news summaries:  Google Gemini Flash API (GOOGLE_AI_API_KEY)
+AI — translation:     GCP Cloud Translation API (GOOGLE_AI_API_KEY)
+AI — moderation:      Google Gemini Flash API (same key, different prompt)
+RSS parsing:          rss-parser npm package
+Scheduling:           node-cron npm package
+
+================================================================================
+SECTION 2B — AI CAPABILITIES (REQUIRED — NOT OPTIONAL)
+================================================================================
+
+The platform is AI-powered. Three AI features must be built as part of this MVP.
+All use GOOGLE_AI_API_KEY. All are in apps/api/src/services/.
+
+--- AI SERVICE 1: News Ingestion (apps/api/src/services/newsIngestion.ts) ---
+
+This service fetches news from RSS feeds and uses Gemini Flash to generate
+bilingual AI summaries. It runs on a schedule and is also manually triggerable.
+
+Dependencies to install in apps/api: rss-parser, node-cron, @types/node-cron
+
+RSS feed sources (hardcode as a constant array to start):
+  const RSS_SOURCES = [
+    { url: 'https://feeds.bbcarabic.com/bbcarabic/world/rss.xml', nameEn: 'BBC Arabic', nameAr: 'بي بي سي عربي' },
+    { url: 'https://www.aljazeera.net/aljazeerarss/a2f35850-5f55-4f9e-83c9-1f202847e1de/d52aebb3-91a3-4dce-9c6f-d1a6b98b1a69', nameEn: 'Al Jazeera Arabic', nameAr: 'الجزيرة' },
+    { url: 'https://sana.sy/?feed=rss2', nameEn: 'SANA', nameAr: 'سانا' },
+  ];
+
+Service function run():
+  1. For each RSS source, fetch and parse feed using rss-parser
+  2. For each item in feed:
+     a. Skip if article with same sourceUrl already exists in DB
+     b. Call Gemini Flash API with this prompt:
+        "You are a news editor for a Syrian news platform. Given this Arabic news article,
+         generate: 1) a concise Arabic summary (2-3 sentences, summaryAr),
+         2) an English translation of the title (titleEn),
+         3) an English summary (summaryEn, 2-3 sentences),
+         4) an AI-generated Arabic summary for display (aiSummaryAr, 1 sentence),
+         5) an English version (aiSummaryEn, 1 sentence),
+         6) relevant tags array (aiTags, max 5, in English, from: Politics, Economy,
+            Society, Technology, Sports, Culture, Diaspora, Reconstruction).
+         Respond ONLY with valid JSON matching this schema:
+         { titleEn, summaryAr, summaryEn, aiSummaryAr, aiSummaryEn, aiTags }
+         Article title: {item.title}
+         Article content: {item.contentSnippet?.slice(0, 500)}"
+     c. Parse the JSON response from Gemini
+     d. Create NewsArticle record:
+        titleAr = item.title
+        titleEn, summaryAr, summaryEn, aiSummaryAr, aiSummaryEn, aiTags from Gemini
+        coverImageUrl = first image found in item.enclosure?.url or item.content
+        sourceUrl = item.link
+        sourceName = source.nameEn
+        source = NewsSource.RSS_IMPORT
+        status = NewsStatus.PUBLISHED
+        publishedAt = item.pubDate ? new Date(item.pubDate) : new Date()
+        slug = await generateUniqueSlug(item.title) — use same slugify util as listings
+     e. Log success or error per article with pino
+  3. Log total: articles processed, created, skipped, failed
+
+Error handling: wrap entire run() in try/catch. A single failed article must NOT
+stop processing remaining articles. Log errors per article and continue.
+
+Schedule in server.ts (production only):
+  import cron from 'node-cron';
+  if (config.isProd) {
+    cron.schedule('0 * * * *', () => {        // every hour on the hour
+      logger.info('Running scheduled news ingestion');
+      newsIngestionService.run().catch(err =>
+        logger.error({ err }, 'News ingestion cron failed')
+      );
+    });
+    logger.info('News ingestion cron scheduled (hourly)');
+  }
+
+Admin manual trigger endpoint (add to admin.ts):
+  POST /api/v1/admin/news/ingest  (requireAdmin)
+  Calls newsIngestionService.run() and returns { message: 'Ingestion started' }
+  Do NOT await — run in background. Return 202 Accepted immediately.
+
+--- AI SERVICE 2: Content Moderation (apps/api/src/services/moderation.ts) ---
+
+Called automatically after every new listing is created (POST /listings).
+Uses Gemini Flash to classify listing content as safe or unsafe.
+
+Function moderateListing(listingId: string, titleAr: string, descriptionAr: string):
+
+  1. Call Gemini Flash API:
+     "You are a content moderator for a Syrian classifieds platform. Review this
+      listing and determine if it is safe and appropriate. Flag content that is:
+      spam, illegal goods, offensive, adult content, or political propaganda.
+      Listing title (Arabic): {titleAr}
+      Listing description (Arabic): {descriptionAr}
+      Respond ONLY with valid JSON: { safe: boolean, score: number (0.0-1.0), reason?: string }
+      score = confidence that content is safe (1.0 = definitely safe, 0.0 = definitely unsafe)"
+
+  2. Parse JSON response
+  3. Update listing in DB:
+     moderationScore = result.score
+     moderationReason = result.reason ?? null
+  4. Auto-approve if safe=true AND score >= 0.85:
+     status = ACTIVE
+     publishedAt = now()
+     Create AuditLog: action='listing.auto_approved', actorId=null, afterState: { moderationScore }
+     Create Notification for user: type=LISTING_APPROVED, deepLink=/listings/{slug}
+  5. Auto-reject if safe=false AND score < 0.3:
+     status = REJECTED
+     Create AuditLog: action='listing.auto_rejected', actorId=null, afterState: { moderationScore, moderationReason }
+  6. Otherwise (score 0.3-0.85): leave as PENDING_REVIEW for human admin
+
+Call from POST /listings route AFTER creating the listing — fire-and-forget:
+  // Non-blocking — do not await, do not fail the request if moderation errors
+  moderation.moderateListing(listing.id, listing.titleAr, listing.descriptionAr)
+    .catch(err => logger.error({ err, listingId: listing.id }, 'Moderation failed'));
+
+--- AI SERVICE 3: Auto-Translation (apps/api/src/services/translation.ts) ---
+
+Uses Gemini Flash (not GCP Translation API — same key, simpler integration)
+to auto-translate Arabic content to English when English fields are missing.
+
+Function translateToEnglish(text: string): Promise<string>:
+  Call Gemini Flash:
+  "Translate this Arabic text to English. Return ONLY the translated text,
+   no explanation, no preamble: {text}"
+  Return the response text directly.
+
+Wire into POST /listings (fire-and-forget after listing creation):
+  if (!body.titleEn && listing.titleAr) {
+    translation.translateToEnglish(listing.titleAr)
+      .then(titleEn => db.listing.update({ where: { id: listing.id }, data: { titleEn } }))
+      .catch(err => logger.warn({ err }, 'Title translation failed'));
+  }
+  if (!body.descriptionEn && listing.descriptionAr) {
+    translation.translateToEnglish(listing.descriptionAr.slice(0, 1000))
+      .then(descriptionEn => db.listing.update({ where: { id: listing.id }, data: { descriptionEn } }))
+      .catch(err => logger.warn({ err }, 'Description translation failed'));
+  }
+
+Wire into POST /news (admin creates article — fire-and-forget):
+  if (!body.titleEn && article.titleAr) { auto-translate titleAr → titleEn }
+  if (!body.summaryEn && article.summaryAr) { auto-translate summaryAr → summaryEn }
+
+Admin translate endpoint (for manual use in admin news editor):
+  POST /api/v1/admin/translate  (requireAdmin)
+  Body: { text: string, targetLang: 'en'|'ar' }
+  Returns: { translatedText: string }
+  Rate limited: 30 requests/minute per admin user.
+
+--- GEMINI API CALL PATTERN (use for all 3 services) ---
+
+  import { GoogleGenerativeAI } from '@google/generative-ai';
+  // Add to apps/api package.json: "@google/generative-ai": "^0.3.0"
+
+  const genAI = new GoogleGenerativeAI(config.googleAi.apiKey);
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+  async function callGemini(prompt: string): Promise<string> {
+    const result = await model.generateContent(prompt);
+    return result.response.text();
+  }
+
+  Always wrap in try/catch. On API error: log with pino, do not crash the request.
+  For JSON responses: strip any markdown fences before JSON.parse():
+    const clean = text.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(clean);
+
+--- AI ENV VARS (already in .env.example, now actively used) ---
+
+  GOOGLE_AI_API_KEY — used by all 3 AI services (Gemini Flash)
+  Add to apps/api package.json: "@google/generative-ai": "^0.3.0"
+  Add to apps/api package.json: "rss-parser": "^3.13.0"
+  Add to apps/api package.json: "node-cron": "^3.0.3"
+  Add to apps/api package.json devDependencies: "@types/node-cron": "^3.0.11"
+
+================================================================================
+SECTION 3 — MONOREPO STRUCTURE (EXACT)
+================================================================================
+
+Create this exact folder structure as an npm workspace monorepo:
+
+livingsyria/
+├── apps/
+│   ├── api/                         # Express REST API — port 4000
+│   │   ├── src/
+│   │   │   ├── config/
+│   │   │   │   ├── env.ts           # requireEnv() fail-fast loader
+│   │   │   │   ├── database.ts      # Prisma singleton with hot-reload guard
+│   │   │   │   ├── redis.ts         # ioredis singleton + cache helpers
+│   │   │   │   ├── firebase.ts      # Firebase Admin SDK init
+│   │   │   │   └── logger.ts        # Pino structured logger
+│   │   │   ├── middleware/
+│   │   │   │   ├── auth.ts          # requireAuth, optionalAuth, requireAdmin
+│   │   │   │   ├── errorHandler.ts  # Global typed error handler
+│   │   │   │   ├── rateLimiter.ts   # General, auth, upload rate limits
+│   │   │   │   ├── appVersion.ts    # X-App-Version header + 426 enforcement
+│   │   │   │   └── notFound.ts      # 404 handler
+│   │   │   ├── routes/
+│   │   │   │   ├── health.ts        # /health/live + /health/ready
+│   │   │   │   ├── auth.ts          # /auth/register, /auth/me
+│   │   │   │   ├── listings.ts      # Full CRUD + Redis cache
+│   │   │   │   ├── news.ts          # News CRUD + Redis cache
+│   │   │   │   ├── users.ts         # Profile, saved, unread counts
+│   │   │   │   ├── upload.ts        # Signed URL pattern (sign + confirm)
+│   │   │   │   ├── conversations.ts # Messaging with cursor pagination
+│   │   │   │   ├── devices.ts       # Push token registration
+│   │   │   │   ├── payments.ts      # Stripe PaymentIntent + webhook
+│   │   │   │   └── admin.ts         # Moderation, users, stats, ingest trigger
+│   │   │   ├── services/
+│   │   │   │   ├── newsIngestion.ts # AI news fetch + Gemini summarise
+│   │   │   │   ├── moderation.ts    # Gemini listing content moderation
+│   │   │   │   └── translation.ts   # GCP Translation API AR↔EN
+│   │   │   ├── utils/
+│   │   │   │   ├── errors.ts        # AppError class + asyncHandler
+│   │   │   │   └── slugify.ts       # Arabic + English URL slugify
+│   │   │   ├── app.ts               # Express factory (all middleware + routes)
+│   │   │   └── server.ts            # Entry point + graceful shutdown
+│   │   ├── Dockerfile               # Multi-stage, non-root, dumb-init
+│   │   ├── package.json
+│   │   └── tsconfig.json
+│   └── web/                         # Next.js frontend — port 3000
+│       ├── src/
+│       │   ├── app/
+│       │   │   └── [locale]/        # i18n root — ar | en
+│       │   │       ├── page.tsx                    # Homepage
+│       │   │       ├── listings/
+│       │   │       │   ├── page.tsx                # Listings feed
+│       │   │       │   ├── [slug]/page.tsx          # Listing detail
+│       │   │       │   └── new/page.tsx             # Post a listing
+│       │   │       ├── news/
+│       │   │       │   ├── page.tsx                # News feed
+│       │   │       │   └── [slug]/page.tsx          # Article detail
+│       │   │       ├── auth/
+│       │   │       │   ├── login/page.tsx
+│       │   │       │   └── register/page.tsx
+│       │   │       ├── account/
+│       │   │       │   ├── page.tsx                # Profile
+│       │   │       │   ├── listings/page.tsx        # My listings
+│       │   │       │   ├── saved/page.tsx           # Saved listings
+│       │   │       │   └── messages/page.tsx        # Conversations
+│       │   │       └── admin/
+│       │   │           ├── page.tsx                # Dashboard
+│       │   │           ├── listings/page.tsx        # Moderation queue
+│       │   │           ├── users/page.tsx           # User management
+│       │   │           ├── news/page.tsx            # News management
+│       │   │           └── ads/page.tsx             # Ad contracts
+│       │   ├── components/
+│       │   │   ├── ui/              # shadcn/ui base components
+│       │   │   ├── layout/
+│       │   │   │   ├── Header.tsx
+│       │   │   │   └── Footer.tsx
+│       │   │   ├── listings/
+│       │   │   │   ├── ListingCard.tsx
+│       │   │   │   ├── ListingGrid.tsx
+│       │   │   │   ├── ListingForm.tsx   # 5-step wizard
+│       │   │   │   └── FilterSidebar.tsx
+│       │   │   ├── news/
+│       │   │   │   ├── ArticleCard.tsx
+│       │   │   │   └── NewsFeed.tsx
+│       │   │   └── shared/
+│       │   │       ├── SearchBar.tsx
+│       │   │       ├── ImageUpload.tsx   # Signed URL upload flow
+│       │   │       └── PriceDisplay.tsx
+│       │   ├── lib/
+│       │   │   ├── api.ts           # Axios client + all API functions
+│       │   │   └── firebase.ts      # Firebase client init
+│       │   ├── hooks/
+│       │   │   ├── useAuth.ts
+│       │   │   ├── useListings.ts
+│       │   │   └── useNews.ts
+│       │   ├── store/
+│       │   │   └── authStore.ts     # Zustand auth store
+│       │   └── messages/
+│       │       ├── ar.json          # All Arabic UI strings
+│       │       └── en.json          # All English UI strings
+│       ├── Dockerfile               # Multi-stage, standalone output
+│       ├── next.config.js
+│       ├── tailwind.config.ts
+│       └── package.json
+│   └── mobile/                      # Expo / React Native — scaffold only, NOT built yet
+│       ├── src/
+│       │   ├── app/                 # Expo Router file-based routing (empty placeholder)
+│       │   ├── lib/
+│       │   │   ├── api.ts           # Axios client (imports types from @livingsyria/shared)
+│       │   │   └── firebase.ts      # Firebase React Native client
+│       │   └── store/
+│       │       └── authStore.ts     # Zustand auth store (mirrors web)
+│       ├── app.json                 # Expo config (name, slug, icon, splash)
+│       ├── app.config.ts            # Typed env config (API_URL, Firebase keys)
+│       ├── package.json             # Expo SDK 50, expo-router, expo-secure-store,
+│       │                            # expo-notifications, @tanstack/react-query,
+│       │                            # zustand, axios, @livingsyria/shared
+│       └── tsconfig.json            # Extends root tsconfig
+├── packages/
+│   └── shared/                      # Shared types, schemas, constants
+│       ├── src/
+│       │   ├── types/
+│       │   │   ├── listing.ts       # ListingListItem, ListingDetail, CreateListingBody
+│       │   │   ├── news.ts          # NewsListItem, NewsArticle
+│       │   │   ├── user.ts          # UserProfile, UpdateProfileBody
+│       │   │   ├── auth.ts          # RegisterBody, AuthResponse
+│       │   │   └── api.ts           # PaginatedResponse<T>, ApiError, MetaWithCursor
+│       │   ├── schemas/
+│       │   │   ├── listing.ts       # Zod schemas for listing forms (used web + mobile)
+│       │   │   ├── auth.ts          # Zod schemas for auth forms
+│       │   │   └── user.ts          # Zod schemas for profile form
+│       │   ├── constants.ts         # LISTING_TYPES, CURRENCIES, PLATFORMS,
+│       │   │                        # DEFAULT_LOCALE, MAX_IMAGES, MAX_FILE_SIZE
+│       │   └── index.ts             # Re-exports everything
+│       ├── package.json             # name: @livingsyria/shared, private: true
+│       └── tsconfig.json            # Extends root tsconfig
+├── prisma/
+│   ├── schema.prisma                # Full schema (see Section 5)
+│   └── seed.ts                      # Categories + news tags
+├── .github/
+│   └── workflows/
+│       └── deploy.yml               # CI/CD pipeline
+├── .env.example
+├── package.json                     # Workspace root
+└── tsconfig.json                    # Root tsconfig
+
+================================================================================
+SECTION 4 — ROOT CONFIG FILES
+================================================================================
+
+--- package.json (root) ---
+{
+  "name": "livingsyria",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=apps/api\" \"npm run dev --workspace=apps/web\"",
+    "build": "npm run build --workspace=apps/api && npm run build --workspace=apps/web",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "db:generate": "prisma generate --schema=./prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema=./prisma/schema.prisma",
+    "db:push": "prisma db push --schema=./prisma/schema.prisma",
+    "db:seed": "ts-node prisma/seed.ts",
+    "db:studio": "prisma studio --schema=./prisma/schema.prisma",
+    "db:reset": "prisma migrate reset --schema=./prisma/schema.prisma"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "concurrently": "^8.2.0",
+    "prisma": "^5.10.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.10.0"
+  },
+  "prisma": { "seed": "ts-node prisma/seed.ts" },
+  "engines": { "node": ">=20.0.0" }
+}
+
+--- tsconfig.json (root) ---
+{
+  "compilerOptions": {
+    "target": "ES2022", "module": "commonjs",
+    "moduleResolution": "node", "lib": ["ES2022"],
+    "strict": true, "esModuleInterop": true,
+    "skipLibCheck": true, "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true, "declaration": true,
+    "sourceMap": true, "baseUrl": ".",
+    "paths": { "@livingsyria/shared": ["./packages/shared/src/index.ts"] }
+  },
+  "exclude": ["node_modules", "**/dist", "**/.next"]
+}
+
+--- .env.example ---
+DATABASE_URL="postgresql://postgres:password@localhost:5432/livingsyria_dev?schema=public"
+REDIS_URL="redis://localhost:6379"
+FIREBASE_PROJECT_ID="your-firebase-project-id"
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+FIREBASE_CLIENT_EMAIL="firebase-adminsdk-xxx@your-project.iam.gserviceaccount.com"
+STRIPE_SECRET_KEY="sk_test_..."
+STRIPE_WEBHOOK_SECRET="whsec_..."
+GCP_PROJECT_ID="livingsyria"
+GCP_STORAGE_BUCKET="livingsyria-media"
+GCP_REGION="me-central1"
+GOOGLE_AI_API_KEY="AIza..."
+NODE_ENV="development"
+API_PORT="4000"
+API_URL="http://localhost:4000"
+WEB_URL="http://localhost:3000"
+JWT_SECRET="change-me-in-production-32-char-minimum"
+SENDGRID_API_KEY="SG...."
+EMAIL_FROM="noreply@livingsyria.com"
+LOG_LEVEL="debug"
+APP_VERSION="0.1.0"
+NEXT_PUBLIC_API_URL="http://localhost:4000"
+NEXT_PUBLIC_FIREBASE_API_KEY="AIza..."
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="xxx.firebaseapp.com"
+NEXT_PUBLIC_FIREBASE_PROJECT_ID="your-project-id"
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET="xxx.appspot.com"
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID="123456789"
+NEXT_PUBLIC_FIREBASE_APP_ID="1:123:web:abc"
+
+================================================================================
+SECTION 5 — DATABASE SCHEMA (PRISMA — EXACT, DO NOT MODIFY)
+================================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole        { USER AGENT ADVERTISER ADMIN SUPER_ADMIN }
+enum UserStatus      { ACTIVE SUSPENDED PENDING_VERIFICATION DELETED }
+enum ListingStatus   { DRAFT PENDING_REVIEW ACTIVE EXPIRED SOLD REJECTED DELETED }
+enum ListingType     { FREE BASIC FEATURED PREMIUM }
+enum PropertyType    { APARTMENT VILLA OFFICE LAND SHOP WAREHOUSE }
+enum VehicleCondition { NEW USED DAMAGED }
+enum TransactionStatus { PENDING COMPLETED FAILED REFUNDED }
+enum AdStatus        { ACTIVE PAUSED COMPLETED CANCELLED }
+enum AdPlacement     { HOMEPAGE_BANNER SIDEBAR LISTING_TOP LISTING_INLINE NEWS_SIDEBAR MOBILE_BANNER }
+enum NewsStatus      { DRAFT PUBLISHED ARCHIVED }
+enum NewsSource      { AI_GENERATED RSS_IMPORT MANUAL }
+enum NotificationType { LISTING_APPROVED LISTING_EXPIRED NEW_MESSAGE PAYMENT_RECEIVED SYSTEM }
+enum MessageStatus   { SENT READ DELETED }
+enum Platform        { IOS ANDROID WEB }
+
+model User {
+  id              String     @id @default(uuid())
+  firebaseUid     String     @unique
+  email           String     @unique
+  emailVerified   Boolean    @default(false)
+  phone           String?
+  phoneVerified   Boolean    @default(false)
+  nameEn          String?
+  nameAr          String?
+  avatarUrl       String?
+  bio             String?    @db.Text
+  locationCity    String?
+  locationCountry String?    @default("SY")
+  role            UserRole   @default(USER)
+  status          UserStatus @default(ACTIVE)
+  preferredLang   String     @default("ar")
+  notifyEmail     Boolean    @default(true)
+  notifyPush      Boolean    @default(true)
+  stripeCustomerId String?                    # Stripe customer ID for payment intents
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  lastLoginAt     DateTime?
+  deletedAt       DateTime?
+  listings        Listing[]
+  sentMessages    Message[]           @relation("SentMessages")
+  receivedMessages Message[]          @relation("ReceivedMessages")
+  conversations   ConversationMember[]
+  notifications   Notification[]
+  transactions    Transaction[]
+  savedListings   SavedListing[]
+  reviews         Review[]            @relation("ReviewAuthor")
+  receivedReviews Review[]            @relation("ReviewTarget")
+  adContracts     AdContract[]
+  sessions        UserSession[]
+  devices         Device[]
+  @@index([email]) @@index([firebaseUid]) @@index([status]) @@index([locationCountry])
+  @@map("users")
+}
+
+model UserSession {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceInfo  String?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+  @@index([userId])
+  @@map("user_sessions")
+}
+
+model Category {
+  id        String      @id @default(uuid())
+  slug      String      @unique
+  nameEn    String
+  nameAr    String
+  descEn    String?
+  descAr    String?
+  iconUrl   String?
+  parentId  String?
+  parent    Category?   @relation("CategoryTree", fields: [parentId], references: [id])
+  children  Category[]  @relation("CategoryTree")
+  sortOrder Int         @default(0)
+  isActive  Boolean     @default(true)
+  listings  Listing[]
+  @@index([parentId])
+  @@map("categories")
+}
+
+model Listing {
+  id            String        @id @default(uuid())
+  userId        String
+  user          User          @relation(fields: [userId], references: [id])
+  categoryId    String
+  category      Category      @relation(fields: [categoryId], references: [id])
+  titleEn       String?
+  titleAr       String
+  descriptionEn String?       @db.Text
+  descriptionAr String        @db.Text
+  price         Decimal?      @db.Decimal(12, 2)
+  currency      String        @default("USD")
+  isNegotiable  Boolean       @default(false)
+  isFree        Boolean       @default(false)
+  city          String?
+  district      String?
+  country       String        @default("SY")
+  lat           Float?
+  lng           Float?
+  addressEn     String?
+  addressAr     String?
+  status        ListingStatus @default(DRAFT)
+  listingType   ListingType   @default(FREE)
+  featuredUntil DateTime?
+  expiresAt     DateTime?
+  viewCount     Int           @default(0)
+  contactCount  Int           @default(0)
+  saveCount     Int           @default(0)
+  slug          String        @unique
+  metaDescEn    String?
+  metaDescAr    String?
+  moderationScore   Float?            # AI moderation confidence (0.0–1.0)
+  moderationReason  String?           # AI rejection reason if flagged
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  publishedAt   DateTime?
+  deletedAt     DateTime?
+  images        ListingImage[]
+  realEstate    RealEstateDetail?
+  vehicle       VehicleDetail?
+  job           JobDetail?
+  savedBy       SavedListing[]
+  conversations Conversation[]
+  reviews       Review[]       @relation("ListingReviews")
+  transactions  Transaction[]
+  @@index([userId]) @@index([categoryId]) @@index([status]) @@index([listingType])
+  @@index([country, city]) @@index([featuredUntil]) @@index([createdAt(sort: Desc)])
+  @@map("listings")
+}
+
+model ListingImage {
+  id        String   @id @default(uuid())
+  listingId String
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  url       String
+  thumbUrl  String?
+  sortOrder Int      @default(0)
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+  @@index([listingId])
+  @@map("listing_images")
+}
+
+model RealEstateDetail {
+  id           String       @id @default(uuid())
+  listingId    String       @unique
+  listing      Listing      @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  propertyType PropertyType
+  sizeM2       Float?
+  bedrooms     Int?
+  bathrooms    Int?
+  floor        Int?
+  totalFloors  Int?
+  yearBuilt    Int?
+  isFurnished  Boolean      @default(false)
+  hasParking   Boolean      @default(false)
+  hasElevator  Boolean      @default(false)
+  hasGarden    Boolean      @default(false)
+  amenities    String[]
+  @@map("real_estate_details")
+}
+
+model VehicleDetail {
+  id           String           @id @default(uuid())
+  listingId    String           @unique
+  listing      Listing          @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  make         String
+  model        String
+  year         Int
+  mileageKm    Int?
+  condition    VehicleCondition
+  fuelType     String?
+  transmission String?
+  color        String?
+  engineCC     Int?
+  doors        Int?
+  vin          String?
+  @@index([make, model]) @@index([year])
+  @@map("vehicle_details")
+}
+
+model JobDetail {
+  id              String    @id @default(uuid())
+  listingId       String    @unique
+  listing         Listing   @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  companyName     String?
+  companyLogoUrl  String?
+  jobType         String
+  workLocation    String
+  salaryMin       Decimal?  @db.Decimal(12, 2)
+  salaryMax       Decimal?  @db.Decimal(12, 2)
+  salaryCurrency  String    @default("USD")
+  experienceYears Int?
+  skills          String[]
+  applyUrl        String?
+  applyEmail      String?
+  deadline        DateTime?
+  @@map("job_details")
+}
+
+model Conversation {
+  id        String               @id @default(uuid())
+  listingId String?
+  listing   Listing?             @relation(fields: [listingId], references: [id])
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+  members   ConversationMember[]
+  messages  Message[]
+  @@index([listingId])
+  @@map("conversations")
+}
+
+model ConversationMember {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  joinedAt       DateTime     @default(now())
+  lastReadAt     DateTime?
+  @@unique([conversationId, userId])
+  @@map("conversation_members")
+}
+
+model Message {
+  id             String        @id @default(uuid())
+  conversationId String
+  conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User          @relation("SentMessages", fields: [senderId], references: [id])
+  receiverId     String
+  receiver       User          @relation("ReceivedMessages", fields: [receiverId], references: [id])
+  body           String        @db.Text
+  status         MessageStatus @default(SENT)
+  createdAt      DateTime      @default(now())
+  deletedAt      DateTime?
+  @@index([conversationId]) @@index([senderId]) @@index([receiverId])
+  @@map("messages")
+}
+
+model NewsArticle {
+  id            String      @id @default(uuid())
+  slug          String      @unique
+  titleEn       String?
+  titleAr       String
+  summaryEn     String?     @db.Text
+  summaryAr     String      @db.Text
+  bodyEn        String?     @db.Text
+  bodyAr        String?     @db.Text
+  coverImageUrl String?
+  sourceUrl     String?
+  sourceName    String?
+  source        NewsSource  @default(AI_GENERATED)
+  status        NewsStatus  @default(DRAFT)
+  aiSummaryEn   String?     @db.Text
+  aiSummaryAr   String?     @db.Text
+  aiTags        String[]
+  viewCount     Int         @default(0)
+  shareCount    Int         @default(0)
+  metaDescEn    String?
+  metaDescAr    String?
+  publishedAt   DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  tags          NewsArticleTag[]
+  @@index([status]) @@index([publishedAt(sort: Desc)])
+  @@map("news_articles")
+}
+
+model NewsTag {
+  id       String           @id @default(uuid())
+  nameEn   String           @unique
+  nameAr   String
+  articles NewsArticleTag[]
+  @@map("news_tags")
+}
+
+model NewsArticleTag {
+  articleId String
+  article   NewsArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  tagId     String
+  tag       NewsTag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  @@id([articleId, tagId])
+  @@map("news_article_tags")
+}
+
+model AdContract {
+  id           String      @id @default(uuid())
+  userId       String
+  user         User        @relation(fields: [userId], references: [id])
+  nameInternal String
+  imageUrl     String
+  linkUrl      String
+  titleEn      String?
+  titleAr      String?
+  placement    AdPlacement
+  status       AdStatus    @default(ACTIVE)
+  startDate    DateTime
+  endDate      DateTime
+  priceUSD     Decimal     @db.Decimal(10, 2)
+  isPaid       Boolean     @default(false)
+  impressions  Int         @default(0)
+  clicks       Int         @default(0)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  @@index([status]) @@index([placement]) @@index([startDate, endDate])
+  @@map("ad_contracts")
+}
+
+model Transaction {
+  id               String            @id @default(uuid())
+  userId           String
+  user             User              @relation(fields: [userId], references: [id])
+  listingId        String?
+  listing          Listing?          @relation(fields: [listingId], references: [id])
+  stripePaymentId  String?           @unique
+  stripeCustomerId String?
+  amountUSD        Decimal           @db.Decimal(10, 2)
+  status           TransactionStatus @default(PENDING)
+  description      String?
+  metadata         Json?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  @@index([userId]) @@index([status]) @@index([stripePaymentId]) @@index([stripeCustomerId])
+  @@map("transactions")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  titleEn   String?
+  titleAr   String?
+  bodyEn    String?
+  bodyAr    String?
+  isRead    Boolean          @default(false)
+  deepLink  String?
+  createdAt DateTime         @default(now())
+  @@index([userId, isRead]) @@index([createdAt(sort: Desc)])
+  @@map("notifications")
+}
+
+model SavedListing {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listingId String
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  @@unique([userId, listingId])
+  @@map("saved_listings")
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  authorId  String
+  author    User     @relation("ReviewAuthor", fields: [authorId], references: [id])
+  targetId  String
+  target    User     @relation("ReviewTarget", fields: [targetId], references: [id])
+  listingId String?
+  listing   Listing? @relation("ListingReviews", fields: [listingId], references: [id])
+  rating    Int
+  comment   String?  @db.Text
+  createdAt DateTime @default(now())
+  @@unique([authorId, targetId, listingId])
+  @@index([targetId])
+  @@map("reviews")
+}
+
+model Device {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  platform  Platform
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId]) @@index([token])
+  @@map("devices")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  actorId     String?
+  action      String
+  entityType  String
+  entityId    String
+  beforeState Json?
+  afterState  Json?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+  @@index([entityType, entityId]) @@index([actorId]) @@index([createdAt(sort: Desc)])
+  @@map("audit_logs")
+}
+
+================================================================================
+SECTION 6 — API SPECIFICATION
+================================================================================
+
+Base URL: /api/v1/
+All responses: JSON
+Auth: Firebase JWT Bearer token in Authorization header
+Error format: { error: string, code: string, details?: object }
+List responses: { data: [], meta: { total, page, limit, pages, nextCursor: string|null } }
+
+Middleware:
+- requireAuth: verifies Firebase ID token, looks up user in DB, attaches req.user.
+  Returns 401 if missing/invalid. Returns 403 if status=SUSPENDED.
+- optionalAuth: same but continues without error if no token present.
+- requireAdmin: use after requireAuth. Returns 403 if role not ADMIN or SUPER_ADMIN.
+
+--- HEALTH ---
+GET  /health/live   → { status: 'ok', timestamp }
+GET  /health/ready  → checks DB (SELECT 1) + Redis (PING). Returns 503 if either fails.
+                      { status: 'ok'|'degraded', checks: { database, redis }, timestamp }
+
+--- AUTH ---
+POST   /auth/register  (no auth)
+  Body: { idToken, nameAr?, nameEn?, phone?, preferredLang?: 'ar'|'en', locationCountry?: string }
+  Verify Firebase idToken server-side. Create user in DB. Return 409 if already exists.
+  Response: { user: { id, email, nameAr, nameEn, role, preferredLang, createdAt } }
+
+GET    /auth/me  (requireAuth)
+  Response: { user: <full User object> }
+
+DELETE /auth/me  (requireAuth)
+  Sets status=DELETED, deletedAt=now(). Response: { message: 'Account deleted' }
+
+PASSWORD RESET (client-side only — no API endpoint needed):
+  On the login page, "Forgot password" link opens a modal with an email input.
+  Call Firebase client SDK: import { sendPasswordResetEmail } from 'firebase/auth'
+  sendPasswordResetEmail(auth, email)
+  Show success message: "Password reset email sent" in Arabic and English.
+  Firebase handles the email delivery — no backend involvement required.
+
+--- LISTINGS ---
+GET  /listings  (optionalAuth)
+  Query: page, limit(max 50), category(slug), country, city, minPrice, maxPrice,
+         type(FREE|BASIC|FEATURED|PREMIUM), sort(newest|price_asc|price_desc|popular)
+  Cache: Redis 30s keyed by serialised query. Invalidate with delPattern('listings:list:*').
+  List response: titleAr, price, city, country, primaryImage only. NO descriptionAr/En.
+  Response: { data: [], meta: { total, page, limit, pages, nextCursor } }
+
+GET  /listings/:slug  (optionalAuth)
+  Cache: Redis 60s. Increment viewCount async (fire-and-forget).
+  Full response including: images(all), realEstate, vehicle, job, user(id,nameAr,nameEn,avatarUrl)
+  Returns 404 if not found or status=DELETED.
+
+POST /listings  (requireAuth)
+  Body: { categoryId(uuid,required), titleAr(required,min3,max200), titleEn?,
+          descriptionAr(required,min10), descriptionEn?, price?, currency?(default USD),
+          isNegotiable?, isFree?, city?, district?, country?(default SY), lat?, lng? }
+  Generate unique slug from titleAr via slugify(). Set status=PENDING_REVIEW.
+  Set expiresAt = now + 30 days.
+  Invalidate listings list cache on create.
+  Response 201: { data: listing }
+
+PATCH /listings/:id  (requireAuth, owner only)
+  Validate with UpdateListingSchema — allowlist ONLY these fields:
+  titleAr, titleEn, descriptionAr, descriptionEn, price, currency,
+  isNegotiable, isFree, city, district, country, lat, lng,
+  status(only DRAFT|ACTIVE|SOLD — owner cannot set PENDING_REVIEW or REJECTED)
+  NEVER pass req.body directly to Prisma. Always validate first.
+  Invalidate listing detail cache + listings list cache on update.
+
+DELETE /listings/:id  (requireAuth, owner or admin)
+  Soft delete: status=DELETED, deletedAt=now(). Invalidate caches.
+
+POST /listings/:id/images  (requireAuth, owner only)
+  Body: { images: [{ url, thumbUrl?, isPrimary, sortOrder }] }
+  Creates ListingImage records. Only one image can have isPrimary=true.
+
+POST /listings/:id/real-estate  (requireAuth, owner only)
+  Body: all RealEstateDetail fields. Upsert by listingId.
+
+POST /listings/:id/vehicle  (requireAuth, owner only)
+  Body: all VehicleDetail fields. Upsert by listingId.
+
+POST /listings/:id/job  (requireAuth, owner only)
+  Body: all JobDetail fields. Upsert by listingId.
+
+--- NEWS ---
+GET  /news  (no auth)
+  Query: page, limit(max 50), tag(nameEn), lang('ar'|'en')
+  Cache: Redis 120s keyed by query. Only return status=PUBLISHED, publishedAt <= now.
+  List response: titleAr, titleEn, summaryAr(max200chars), summaryEn, coverImageUrl,
+                 sourceName, publishedAt, viewCount, aiTags, tags. NO bodyAr/bodyEn.
+  Response: { data: [], meta: { total, page, limit, pages, nextCursor } }
+
+GET  /news/:slug  (no auth)
+  Cache: Redis 300s. Increment viewCount async.
+  Full response including bodyAr, bodyEn, aiSummaryAr, aiSummaryEn, all tags.
+
+POST  /news  (requireAdmin)
+  Body: { titleAr(required), titleEn?, summaryAr(required), summaryEn?, bodyAr?,
+          bodyEn?, coverImageUrl?, sourceUrl?, sourceName?,
+          source?(default AI_GENERATED), tagIds?: string[] }
+  Generate slug from titleAr. Set status=DRAFT by default.
+
+PATCH /news/:id  (requireAdmin) — update any news fields
+DELETE /news/:id  (requireAdmin) — sets status=ARCHIVED
+
+--- USERS ---
+GET  /users/:id  (no auth)
+  Public profile: { id, nameAr, nameEn, avatarUrl, bio, locationCity, locationCountry,
+                    createdAt, _count: { listings, receivedReviews } }
+
+PATCH /users/me  (requireAuth)
+  Allowlist: nameEn, nameAr, bio, phone, locationCity, locationCountry,
+             preferredLang, notifyEmail, notifyPush, avatarUrl
+
+GET  /users/me/listings  (requireAuth)
+  Own listings, all statuses except DELETED. Include primaryImage and category.
+
+GET  /users/me/saved  (requireAuth)
+  Saved listings with primaryImage and category.
+
+POST   /users/me/saved/:listingId  (requireAuth) — upsert saved listing
+DELETE /users/me/saved/:listingId  (requireAuth) — remove saved listing
+
+GET  /users/me/unread  (requireAuth)
+  Returns { messages: number, notifications: number }
+  Cache in Redis 30s keyed by userId. Invalidate on new message or notification.
+
+--- UPLOAD (SIGNED URL PATTERN — API NEVER PROXIES BYTES) ---
+
+POST /upload/sign  (requireAuth, rate limited 50/hour)
+  Body: { filename, contentType('image/jpeg'|'image/png'|'image/webp'),
+          contentLength(bytes, max 5242880) }
+  Generate GCS path: listings/{userId}/{uuid}.{ext}
+  Return GCS signed POST policy (15 min expiry).
+  Response: { signedUrl, fields, gcsPath, publicUrl }
+
+  Client flow after receiving response:
+  1. POST signedUrl with fields as form data + file binary
+  2. This uploads directly to GCS — API server is NOT involved
+  3. Call POST /upload/confirm with gcsPath
+
+POST /upload/confirm  (requireAuth)
+  Body: { gcsPath }
+  Security: validate gcsPath starts with listings/{req.user.id}/
+  Verify file exists in GCS bucket.
+  Response: { url: string }
+
+--- CONVERSATIONS ---
+GET  /conversations  (requireAuth)
+  List user's conversations ordered by updatedAt desc.
+  Include: listing(id,slug,titleAr,primaryImage), otherMember(user), lastMessage, unreadCount.
+  unreadCount = messages where receiverId=user.id AND status=SENT AND
+                createdAt > member.lastReadAt.
+
+GET  /conversations/:id/messages  (requireAuth, member only)
+  CURSOR-BASED pagination (not offset):
+  Query: cursor(ISO timestamp, optional), limit(default 30, max 50)
+  Where: createdAt < cursor if cursor provided.
+  Order: createdAt DESC, take limit+1 to determine hasMore.
+  Mark received messages as READ. Update member.lastReadAt.
+  Response: { data: messages(reversed to ASC), nextCursor: string|null, hasMore: boolean }
+
+POST /conversations  (requireAuth)
+  Body: { listingId, message }
+  Cannot message own listing (return 400).
+  Reuse existing conversation if one exists for this listing+user pair.
+  Create notification for listing owner:
+    type=NEW_MESSAGE, deepLink=/conversations/{conversationId}
+  Response 201: { data: { conversation, message } }
+
+POST /conversations/:id/messages  (requireAuth, member only)
+  Body: { body }
+  Update conversation.updatedAt.
+  Response 201: { data: message }
+
+--- DEVICES ---
+POST   /devices  (requireAuth)
+  Body: { token, platform('IOS'|'ANDROID'|'WEB') }
+  Upsert by token. Set isActive=true, update userId.
+  Response 201: { data: { id, token, platform } }
+
+DELETE /devices/:token  (requireAuth, owner only)
+  Set isActive=false. Response: { message: 'Device deregistered' }
+
+--- PAYMENTS ---
+
+POST /payments/create-intent  (requireAuth)
+  Creates a Stripe PaymentIntent for upgrading a listing.
+  Body: { listingId, listingType('BASIC'|'FEATURED'|'PREMIUM') }
+  Pricing:
+    BASIC   = $500 cents ($5.00)
+    FEATURED = $1500 cents ($15.00)
+    PREMIUM  = $2500 cents ($25.00)
+  Steps:
+  1. Verify listing exists and belongs to req.user.id
+  2. Create or retrieve Stripe customer for this user (store stripeCustomerId on user)
+  3. Create Stripe PaymentIntent with amount, currency='usd', customer id,
+     metadata: { listingId, listingType, userId }
+  4. Create Transaction record with status=PENDING, stripePaymentId=paymentIntent.id
+  Response: { clientSecret: string, transactionId: string }
+  The frontend uses clientSecret with Stripe.js to complete payment on the client.
+
+POST /webhooks/stripe  (no auth — verified by Stripe signature)
+  IMPORTANT: This route must use express.raw() middleware, NOT express.json().
+  Register before the global json() middleware:
+    app.use('/webhooks/stripe', express.raw({ type: 'application/json' }), stripeWebhookHandler)
+
+  Verify signature: stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET)
+  Return 400 immediately if signature verification fails.
+
+  Handle these events:
+  payment_intent.succeeded:
+    1. Find Transaction by stripePaymentId
+    2. Set Transaction status=COMPLETED
+    3. Set Listing listingType to metadata.listingType
+    4. If listingType=FEATURED or PREMIUM: set featuredUntil = now + 30 days
+    5. Create Notification for user: type=PAYMENT_RECEIVED,
+       titleAr='تم الدفع بنجاح', titleEn='Payment Successful',
+       deepLink=/listings/{listing.slug}
+    6. Write AuditLog: action='listing.upgraded'
+
+  payment_intent.payment_failed:
+    1. Find Transaction by stripePaymentId
+    2. Set Transaction status=FAILED
+
+  Always return HTTP 200 to Stripe after handling. Stripe will retry on non-200.
+
+--- ADMIN ---
+All admin routes require requireAuth + requireAdmin middleware.
+
+GET  /admin/listings/pending
+  Listings with status=PENDING_REVIEW, ordered by createdAt ASC.
+  Include: user(id,nameAr,nameEn,email), category, primaryImage.
+
+POST /admin/listings/:id/approve
+  In a DB transaction:
+  1. Set listing status=ACTIVE, publishedAt=now()
+  2. Create AuditLog: action='listing.approved', beforeState, afterState, actorId, ipAddress
+  3. Create Notification for listing owner:
+     type=LISTING_APPROVED, deepLink=/listings/{slug}
+
+POST /admin/listings/:id/reject
+  Body: { reason }
+  In a DB transaction:
+  1. Set listing status=REJECTED
+  2. Create AuditLog: action='listing.rejected', afterState includes reason
+
+GET  /admin/users
+  Query: status?, role?, page, limit(max 100)
+  Response: paginated users with _count.listings
+
+PATCH /admin/users/:id/suspend
+  Body: { reason }
+  In DB transaction: set status=SUSPENDED + create AuditLog.
+
+GET  /admin/stats
+  Returns all in one response:
+  { totalUsers, newUsers30d, activeListings, pendingListings,
+    totalRevenueUSD, listingsByCategory[{categoryId, _count}] }
+
+================================================================================
+SECTION 7 — app.ts (EXPRESS SETUP — EXACT IMPLEMENTATION)
+================================================================================
+
+Build apps/api/src/app.ts with this exact configuration:
+
+1. Middleware order (must be exact):
+   helmet() → cors() → compression() → json() → urlencoded() → pinoHttp() → rateLimiter
+
+2. CORS — use origin callback function, NOT static array:
+   - Allow: config.webUrl, 'http://localhost:3000', AND null origin (React Native)
+   - allowedHeaders: ['Content-Type', 'Authorization', 'X-App-Version', 'X-Platform']
+   - exposedHeaders: ['X-RateLimit-Remaining', 'X-Request-Id']
+
+   Implementation:
+   const allowedOrigins = [config.webUrl, 'http://localhost:3000'];
+   cors({
+     origin: (origin, callback) => {
+       if (!origin) return callback(null, true); // mobile / no origin
+       if (allowedOrigins.includes(origin)) return callback(null, true);
+       callback(new Error(`CORS: origin ${origin} not allowed`));
+     },
+     ...
+   })
+
+3. pinoHttp customProps — log X-App-Version and X-Platform on every request:
+   customProps: (req) => ({
+     appVersion: req.headers['x-app-version'] ?? 'web',
+     platform: req.headers['x-platform'] ?? 'web',
+   })
+
+4. Rate limiter applied to '/api/' prefix only.
+
+5. IMPORTANT — Stripe webhook must be registered BEFORE the global express.json() middleware,
+   using express.raw() instead. Add this line before app.use(express.json(...)):
+   app.use('/webhooks/stripe', express.raw({ type: 'application/json' }), stripeWebhookHandler)
+
+6. Register ALL routes:
+   app.use('/health', healthRouter)
+   app.use('/api/v1/auth', authRouter)
+   app.use('/api/v1/listings', listingsRouter)
+   app.use('/api/v1/news', newsRouter)
+   app.use('/api/v1/users', usersRouter)
+   app.use('/api/v1/upload', uploadRouter)
+   app.use('/api/v1/conversations', conversationsRouter)
+   app.use('/api/v1/devices', devicesRouter)
+   app.use('/api/v1/payments', paymentsRouter)
+   app.use('/api/v1/admin', adminRouter)
+   app.use(notFound)      // must be after all routes
+   app.use(errorHandler)  // must be last
+
+================================================================================
+SECTION 8 — appVersion.ts MIDDLEWARE
+================================================================================
+
+Create apps/api/src/middleware/appVersion.ts:
+
+- Read X-App-Version header from request
+- If header is present AND semver version is below MIN_APP_VERSION (set to '0.0.1'),
+  return HTTP 426 Upgrade Required:
+  { error: 'App version too old. Please update.', code: 'UPGRADE_REQUIRED',
+    minVersion: MIN_APP_VERSION }
+- If header absent or version >= minimum: call next()
+- This is applied globally in app.ts after pinoHttp
+
+Apply in app.ts after pinoHttp: app.use(appVersionMiddleware)
+
+================================================================================
+SECTION 9 — WEB APP PAGES
+================================================================================
+
+All pages: Next.js App Router, [locale] segment (ar|en).
+Arabic = dir="rtl", English = dir="ltr".
+Server components by default. Use 'use client' only for interactivity.
+Default locale = 'ar'.
+
+--- SEO — REQUIRED ON ALL PUBLIC PAGES ---
+
+1. generateMetadata() on listing detail (app/[locale]/listings/[slug]/page.tsx):
+   export async function generateMetadata({ params }) {
+     const listing = await fetchListing(params.slug);
+     return {
+       title: listing.titleAr,
+       description: listing.descriptionAr?.slice(0, 160),
+       openGraph: {
+         title: listing.titleAr,
+         description: listing.descriptionAr?.slice(0, 160),
+         images: [listing.images[0]?.url],
+         type: 'article',
+       },
+     };
+   }
+
+2. generateMetadata() on news article (app/[locale]/news/[slug]/page.tsx):
+   export async function generateMetadata({ params }) {
+     const article = await fetchArticle(params.slug);
+     return {
+       title: article.titleAr,
+       description: article.summaryAr?.slice(0, 160),
+       openGraph: {
+         title: article.titleAr,
+         description: article.summaryAr?.slice(0, 160),
+         images: [article.coverImageUrl],
+         type: 'article',
+         publishedTime: article.publishedAt,
+       },
+     };
+   }
+
+3. Homepage metadata (app/[locale]/page.tsx):
+   export const metadata = {
+     title: 'LivingSyria — أخبار وإعلانات سوريا',
+     description: 'منصة سوريا الرقمية: أخبار، عقارات، سيارات، وظائف وإعلانات مبوبة',
+     openGraph: { title: 'LivingSyria', images: ['/og-image.png'] },
+   };
+
+4. Sitemap (apps/web/src/app/sitemap.ts):
+   Generates dynamic sitemap including all ACTIVE listing slugs and PUBLISHED news slugs.
+   Fetches from API and returns Next.js MetadataRoute.Sitemap array.
+   Priority: homepage=1.0, news=0.9, listings=0.8, static pages=0.5
+   changeFrequency: news='hourly', listings='daily', static='monthly'
+
+5. Robots (apps/web/src/app/robots.ts):
+   export default function robots() {
+     return {
+       rules: { userAgent: '*', allow: '/', disallow: ['/admin/', '/account/'] },
+       sitemap: 'https://livingsyria.com/sitemap.xml',
+     };
+   }
+
+--- HEADER (components/layout/Header.tsx) ---
+- LivingSyria logo (navy + red accent)
+- Nav: Home | Listings | Real Estate | Vehicles | Jobs | News
+- Language toggle: AR/EN button — switches locale, persists to localStorage
+- Search bar: full-width desktop, icon-only mobile toggle
+- Auth: Login/Register (unauthenticated) | Avatar dropdown (authenticated)
+- "Post Ad" CTA button — navy, top right
+- Mobile: hamburger → slide-in drawer
+
+--- FOOTER (components/layout/Footer.tsx) ---
+- 4-column: About | Quick Links | Categories | Contact
+- Social: Facebook, Instagram, Telegram, WhatsApp
+- Dark navy (#1a3a5c) background, white text
+
+--- NEXT-INTL REQUIRED CONFIG FILES ---
+
+Create these two files or the i18n routing will not work at all:
+
+1. middleware.ts (at apps/web/src/middleware.ts — Next.js root):
+   import createMiddleware from 'next-intl/middleware';
+   export default createMiddleware({
+     locales: ['ar', 'en'],
+     defaultLocale: 'ar',
+     localePrefix: 'always'
+   });
+   export const config = { matcher: ['/((?!api|_next|.*\\..*).*)'] };
+
+2. i18n.ts (at apps/web/src/i18n.ts):
+   import { getRequestConfig } from 'next-intl/server';
+   export default getRequestConfig(async ({ locale }) => ({
+     messages: (await import(`./messages/${locale}.json`)).default
+   }));
+
+3. next.config.js must wrap config with next-intl plugin:
+   const withNextIntl = require('next-intl/plugin')('./src/i18n.ts');
+   module.exports = withNextIntl({ ...existingConfig });
+
+4. Root layout (apps/web/src/app/[locale]/layout.tsx) must:
+   - Accept { children, params: { locale } } props
+   - Set <html lang={locale} dir={locale === 'ar' ? 'rtl' : 'ltr'}>
+   - Wrap children with <NextIntlClientProvider locale={locale} messages={messages}>
+
+--- HOMEPAGE (app/[locale]/page.tsx) ---
+Sections in order:
+1. Hero: full-width banner with search bar overlay.
+   Tabs: All | Real Estate | Vehicles | Jobs.
+   Navy gradient background.
+
+2. Featured Listings: horizontal scroll, 8 FEATURED listings.
+   Each card: primaryImage, titleAr, price, city, category badge.
+
+3. Latest News: 3-column grid, 6 most recent PUBLISHED articles.
+   Each: coverImage, titleAr, summaryAr(120 char truncated), publishedAt.
+
+4. Category Grid: 4×2 grid of category cards with icon, nameAr, listing count.
+   Click → /listings?category=slug
+
+5. Real Estate Highlights: 4-card grid, newest real estate listings.
+
+6. Stats Bar: total listings | registered users | cities covered | years active.
+
+7. Ad Banner: full-width HOMEPAGE_BANNER ad slot.
+
+--- LISTINGS PAGE (app/[locale]/listings/page.tsx) ---
+- Desktop: left sidebar (filter panel) + main content grid
+- Mobile: "Filter" button → bottom sheet
+- Filters: Category (tree), Country, City, Price range, Listing type, Sort
+- Grid: 3 cols desktop, 2 tablet, 1 mobile
+
+ListingCard component:
+- Primary image (16:9 ratio)
+- titleAr (truncated 60 chars)
+- Price (USD formatted) or "مجاني" if isFree
+- City + country
+- Category badge
+- Gold "مميز" ribbon if listingType=FEATURED
+- Save (heart) button
+- Relative time: "منذ 3 أيام"
+
+Pagination: page numbers + prev/next. Show total count.
+Ad slot: SIDEBAR between filters and 6th card on mobile.
+
+--- LISTING DETAIL (app/[locale]/listings/[slug]/page.tsx) ---
+- Image gallery: large main + thumbnails. Lightbox on click.
+- H1: titleAr. Price. Category breadcrumb. Location pin icon.
+- Tabs: Details | Description | Seller | Map
+  - Details: dynamic per category (RE: beds/baths/size, Vehicle: make/model/year, Job: salary/type)
+  - Description: full descriptionAr + descriptionEn with RTL/LTR handling
+  - Seller: avatar, nameAr, member since, listing count, rating, "Send Message" button
+  - Map: Google Maps embed at lat/lng. Fallback: city name text.
+- Sticky contact sidebar: price, "Contact Seller" (→ message modal), Share, Save buttons
+- Related listings: 4 cards, same category
+- LISTING_TOP ad slot above fold
+
+--- POST A LISTING (app/[locale]/listings/new/page.tsx) ---
+Requires auth. Redirect to /auth/login if not authenticated.
+
+5-step wizard with progress indicator:
+
+Step 1 — Category selection:
+  Grid of category cards. Click subcategory to proceed.
+
+Step 2 — Details (dynamic form based on category):
+  All categories: titleAr(required), titleEn, descriptionAr(required), descriptionEn,
+                  price, currency select(USD/SYP/EUR), isNegotiable checkbox, isFree checkbox
+  Real Estate adds: propertyType select, sizeM2, bedrooms, bathrooms, floor,
+                    isFurnished, hasParking, hasElevator checkboxes
+  Vehicles adds: make, model, year, mileageKm, condition select, fuelType, transmission, color
+  Jobs adds: companyName, jobType select, workLocation select, salaryMin, salaryMax,
+             skills tags input, applyUrl or applyEmail, deadline date picker
+
+Step 3 — Location:
+  Country select (SY default), city text input, district (optional)
+
+Step 4 — Photos:
+  Drag-and-drop uploader. Max 10 images. Primary image selector.
+  Upload flow: POST /upload/sign → client PUT to signedUrl → POST /upload/confirm
+  Show upload progress bar per file. Show preview thumbnails.
+
+Step 5 — Review & Submit:
+  Summary of all entered data. Edit links per section.
+  Submit → POST /listings → POST /listings/:id/real-estate|vehicle|job if applicable
+         → POST /listings/:id/images
+         → Redirect to /listings/{slug}
+
+--- NEWS FEED (app/[locale]/news/page.tsx) ---
+- Header: "أخبار سوريا" / "Syria News"
+- Tag filter pills (fetch from news tags)
+- Featured article: large hero card at top
+- ArticleCard grid: 3-column responsive
+  Each: coverImage, tags, titleAr, summaryAr(120 chars), publishedAt, viewCount, sourceName
+- Sidebar: NEWS_SIDEBAR ad slot + trending tags
+- Pagination
+
+--- NEWS ARTICLE (app/[locale]/news/[slug]/page.tsx) ---
+- Cover image full-width (max 800px height, object-cover)
+- H1: titleAr (Playfair Display)
+- Meta: sourceName, publishedAt, viewCount, share buttons (copy link, WhatsApp, Telegram)
+- AI Summary box: gold-bordered card, label "ملخص ذكي", shows aiSummaryAr
+- Article body: bodyAr (if empty, show summaryAr). Proper Arabic typography.
+- Tags: pill badges → /news?tag=xxx
+- Related articles: 3 cards, same tags
+
+--- AUTH PAGES ---
+Login (app/[locale]/auth/login/page.tsx):
+  Centered card. LivingSyria logo top.
+  Email + password form. Google sign-in button. "Forgot password" link. Link to register.
+
+Register (app/[locale]/auth/register/page.tsx):
+  Email + password + confirm password. nameAr field. preferredLang select.
+  Google sign-up button.
+  On success: POST /auth/register with idToken → redirect to /account
+
+--- ACCOUNT PAGES (all require auth) ---
+Profile (/account):
+  Avatar upload (POST /upload/sign → confirm). Name fields. Bio. Phone. Location.
+  Language preference. Notification toggles. Save with PATCH /users/me.
+
+My Listings (/account/listings):
+  Table with status badges, edit/delete actions. "Post New" CTA.
+
+Saved (/account/saved):
+  Grid of saved listings. Remove button (DELETE /users/me/saved/:id).
+
+Messages (/account/messages):
+  Split layout: left = conversation list with unreadCount badges.
+  Right = message thread. Input box at bottom.
+  Poll for new messages every 5 seconds (no WebSocket for MVP).
+
+--- ADMIN PORTAL (app/[locale]/admin/) ---
+Protected: redirect non-admin users to homepage.
+
+Dashboard (/admin):
+  KPI cards: Total Users | Active Listings | Pending Review | Total Revenue | New Users 30d
+  Recent activity table: last 20 audit log entries.
+  Quick action buttons: "Review Pending" | "Add News Article"
+
+Listings Moderation (/admin/listings):
+  Tabs: Pending Review | Active | Rejected | All
+  Table: thumbnail, titleAr, category, user email, city, submitted date, status badge
+  Row actions: Approve (green) | Reject (red, reason modal) | View
+  Bulk select + bulk approve/reject
+
+Users Management (/admin/users):
+  Searchable table: avatar, nameAr, email, role, status, listings count, joined date
+  Row actions: View | Suspend | Change role
+  Filters: status, role
+
+News Management (/admin/news):
+  Table: titleAr, status, publishedAt, viewCount
+  Create/Edit form: all fields, image upload for cover, rich text for bodyAr
+  Status toggle: Draft ↔ Published ↔ Archived
+  "Trigger AI Ingest" button: calls POST /api/v1/admin/news/ingest — shows spinner
+  while running, displays toast on completion: "Ingestion started — new articles
+  will appear within minutes"
+
+Ads Management (/admin/ads):
+  Table: nameInternal, placement, impressions, clicks, CTR, status, dates
+  Create ad: imageUrl upload, linkUrl, placement select, start/end dates, priceUSD
+
+================================================================================
+SECTION 10 — NON-FUNCTIONAL REQUIREMENTS
+================================================================================
+
+SECURITY:
+- All private endpoints: requireAuth middleware
+- Rate limiting: 200/15min general, 20/15min auth endpoints, 50/hr upload
+- Helmet.js on all responses
+- CORS: origin callback allowing web URL + localhost:3000 + null (mobile)
+  allowedHeaders: Content-Type, Authorization, X-App-Version, X-Platform
+  exposedHeaders: X-RateLimit-Remaining, X-Request-Id
+- ALL inputs validated with Zod. PATCH endpoints: explicit allowlist schemas only.
+  NEVER pass req.body directly to Prisma update.
+- File uploads: signed URL pattern. API never proxies bytes.
+- Prisma ORM only. No raw SQL except SELECT 1 in health check.
+- All config from environment variables via requireEnv(). Zero hardcoded values.
+- npm audit --audit-level=high in CI pipeline
+
+PERFORMANCE:
+- SSR on all public pages (homepage, listings, news)
+- Listings list: Redis 30s cache keyed by query. Invalidate on mutation.
+- Listing detail: Redis 60s cache. Invalidate on update.
+- News articles: Redis 300s cache
+- Unread counts: Redis 30s per userId
+- List endpoints: strip full body/description — return summaries only
+- Messages: cursor-based pagination. All other lists include nextCursor in meta.
+- Compression: gzip on all API responses
+- Prisma pool: max=5 connections (Cloud SQL f1-micro limit)
+
+RELIABILITY:
+- Graceful shutdown: SIGTERM/SIGINT → close server → disconnect DB + Redis → exit
+- unhandledRejection: log + process.exit(1)
+- Health checks: /health/live (always 200) + /health/ready (checks DB + Redis)
+- Redis: Upstash for MVP (free tier). Set REDIS_URL from Upstash dashboard.
+
+INTERNATIONALISATION:
+- Locales: ar (default, RTL) and en (LTR)
+- URL pattern: /ar/... and /en/...
+- next-intl handles routing
+- All strings in messages/ar.json and messages/en.json
+- Arabic required on all content fields. English optional everywhere.
+- Dates: Intl.DateTimeFormat with locale
+- Prices: Intl.NumberFormat with USD
+
+================================================================================
+SECTION 10B — PACKAGES/SHARED AND MOBILE SCAFFOLD
+================================================================================
+
+--- packages/shared (REQUIRED — used by all three apps) ---
+
+Create packages/shared/package.json:
+{
+  "name": "@livingsyria/shared",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts"
+}
+
+Create packages/shared/src/types/api.ts:
+  export interface PaginatedResponse<T> {
+    data: T[];
+    meta: {
+      total: number;
+      page: number;
+      limit: number;
+      pages: number;
+      nextCursor: string | null;
+    };
+  }
+  export interface ApiError {
+    error: string;
+    code: string;
+    details?: unknown;
+  }
+
+Create packages/shared/src/types/listing.ts:
+  Types for: ListingListItem (lean — no description), ListingDetail (full),
+  CreateListingBody, UpdateListingBody — matching exactly the API request/response shapes.
+
+Create packages/shared/src/types/news.ts:
+  Types for: NewsListItem (no body), NewsArticle (full), CreateNewsBody.
+
+Create packages/shared/src/types/user.ts:
+  Types for: UserProfile (public), AuthenticatedUser (full), UpdateProfileBody.
+
+Create packages/shared/src/constants.ts:
+  export const LISTING_TYPES = ['FREE', 'BASIC', 'FEATURED', 'PREMIUM'] as const;
+  export const CURRENCIES = ['USD', 'SYP', 'EUR'] as const;
+  export const PLATFORMS = ['IOS', 'ANDROID', 'WEB'] as const;
+  export const LOCALES = ['ar', 'en'] as const;
+  export const DEFAULT_LOCALE = 'ar';
+  export const MAX_LISTING_IMAGES = 10;
+  export const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+  export const LISTING_EXPIRES_DAYS = 30;
+  export const LISTING_PRICING = { BASIC: 500, FEATURED: 1500, PREMIUM: 2500 }; // cents
+
+Create packages/shared/src/index.ts:
+  Re-export everything from types/ and constants.ts.
+
+The root tsconfig.json already has the path alias:
+  "@livingsyria/shared": ["./packages/shared/src/index.ts"]
+Import in any app as: import { PaginatedResponse } from '@livingsyria/shared';
+
+--- apps/mobile scaffold (DO NOT BUILD SCREENS — scaffold only) ---
+
+Create apps/mobile/package.json:
+{
+  "name": "@livingsyria/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "build:preview": "eas build --profile preview --platform all",
+    "build:prod": "eas build --profile production --platform all"
+  },
+  "dependencies": {
+    "@livingsyria/shared": "*",
+    "@tanstack/react-query": "^5.25.0",
+    "axios": "^1.6.0",
+    "expo": "~50.0.0",
+    "expo-notifications": "~0.27.0",
+    "expo-router": "~3.4.0",
+    "expo-secure-store": "~12.8.0",
+    "expo-status-bar": "~1.11.0",
+    "firebase": "^10.9.0",
+    "react": "18.2.0",
+    "react-native": "0.73.6",
+    "zustand": "^4.5.0"
+  }
+}
+
+Create apps/mobile/app.json:
+{
+  "expo": {
+    "name": "LivingSyria",
+    "slug": "livingsyria",
+    "version": "1.0.0",
+    "scheme": "livingsyria",
+    "platforms": ["ios", "android"],
+    "icon": "./assets/icon.png",
+    "splash": { "backgroundColor": "#1a3a5c" },
+    "android": { "package": "com.livingsyria.app" },
+    "ios": { "bundleIdentifier": "com.livingsyria.app" },
+    "plugins": ["expo-router", "expo-notifications", "expo-secure-store"]
+  }
+}
+
+Create apps/mobile/app.config.ts:
+  import { ExpoConfig } from 'expo/config';
+  export default ({ config }: { config: ExpoConfig }): ExpoConfig => ({
+    ...config,
+    extra: {
+      apiUrl: process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000',
+      firebaseApiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY ?? '',
+    },
+  });
+
+Create apps/mobile/src/lib/api.ts:
+  Mirror of apps/web/src/lib/api.ts but using expo-secure-store for token storage
+  instead of browser localStorage. Import all types from @livingsyria/shared.
+  Token refresh: Axios interceptor calls Firebase getIdToken(true) on 401 response.
+
+Create apps/mobile/src/app/_layout.tsx (placeholder):
+  import { Stack } from 'expo-router';
+  export default function RootLayout() { return <Stack />; }
+
+Create apps/mobile/src/app/index.tsx (placeholder):
+  import { Text, View } from 'react-native';
+  export default function Index() {
+    return <View style={{ flex:1, alignItems:'center', justifyContent:'center' }}>
+      <Text>LivingSyria — Coming Soon</Text>
+    </View>;
+  }
+
+Create apps/mobile/tsconfig.json:
+  { "extends": "../../tsconfig.json", "include": ["src/**/*", "app.config.ts"] }
+
+Add to root package.json workspaces array: "apps/mobile", "packages/*"
+
+IMPORTANT: The mobile app screens, navigation, and UI are NOT built in this
+session. The scaffold above just ensures the monorepo is structurally correct
+so Phase 2 mobile development slots in without restructuring.
+
+================================================================================
+SECTION 11 — SEED DATA
+================================================================================
+
+Run: npm run db:seed
+
+Categories to create (parent then children):
+  classifieds    / إعلانات مبوبة  (parent, sort 1)
+  real-estate    / عقارات          (parent, sort 2)
+  vehicles       / مركبات          (parent, sort 3)
+  jobs           / وظائف           (parent, sort 4)
+  businesses     / أعمال تجارية    (parent, sort 5)
+  news           / أخبار           (parent, sort 6)
+  electronics    / إلكترونيات      (child of classifieds, sort 1)
+  furniture      / أثاث            (child of classifieds, sort 2)
+  clothing       / ملابس           (child of classifieds, sort 3)
+  services       / خدمات           (child of classifieds, sort 4)
+  other          / أخرى            (child of classifieds, sort 5)
+  re-sale        / للبيع           (child of real-estate, sort 1)
+  re-rent        / للإيجار         (child of real-estate, sort 2)
+  cars           / سيارات          (child of vehicles, sort 1)
+  motorcycles    / دراجات          (child of vehicles, sort 2)
+  trucks         / شاحنات          (child of vehicles, sort 3)
+
+News tags to create:
+  Politics/سياسة  Economy/اقتصاد  Society/مجتمع  Technology/تكنولوجيا
+  Sports/رياضة   Culture/ثقافة   Diaspora/الشتات  Reconstruction/إعادة الإعمار
+
+================================================================================
+SECTION 12 — ENVIRONMENT VARIABLES
+================================================================================
+
+All required. App must fail to start if any required variable is missing.
+Use requireEnv() helper that throws Error if value is undefined.
+
+Required for API:
+  DATABASE_URL          PostgreSQL connection string
+  REDIS_URL             Redis connection (Upstash rediss:// URL for production)
+  JWT_SECRET            Random 32+ char string
+  FIREBASE_PROJECT_ID   From Firebase console → Project Settings
+  FIREBASE_PRIVATE_KEY  From Firebase Service Account JSON (full PEM)
+  FIREBASE_CLIENT_EMAIL From Firebase Service Account JSON
+  GCP_PROJECT_ID        GCP project ID
+  GCP_STORAGE_BUCKET    GCS bucket name (livingsyria-media)
+  STRIPE_SECRET_KEY     sk_test_... for development
+  STRIPE_WEBHOOK_SECRET whsec_... from Stripe dashboard
+  SENDGRID_API_KEY      SG.... from SendGrid
+  GOOGLE_AI_API_KEY     From Google AI Studio (aistudio.google.com) — ACTIVELY USED
+                        by 3 services: newsIngestion.ts, moderation.ts, translation.ts
+                        DO NOT leave this empty — AI features will silently fail
+  API_PORT              4000
+  WEB_URL               http://localhost:3000
+
+Required for Web (NEXT_PUBLIC_ prefix = baked into client bundle at build):
+  NEXT_PUBLIC_API_URL                   http://localhost:4000
+  NEXT_PUBLIC_FIREBASE_API_KEY
+  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+  NEXT_PUBLIC_FIREBASE_PROJECT_ID
+  NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+  NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+  NEXT_PUBLIC_FIREBASE_APP_ID
+
+Required for Mobile (EXPO_PUBLIC_ prefix — baked into app at build time):
+  EXPO_PUBLIC_API_URL                   https://api.livingsyria.com
+  EXPO_PUBLIC_FIREBASE_API_KEY          Same as NEXT_PUBLIC_FIREBASE_API_KEY
+  EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN      Same as NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+  EXPO_PUBLIC_FIREBASE_PROJECT_ID       Same as NEXT_PUBLIC_FIREBASE_PROJECT_ID
+
+================================================================================
+SECTION 13 — RUN COMMANDS
+================================================================================
+
+After cloning and setting environment variables:
+
+  npm install              # install all workspace dependencies
+  npm run db:generate      # generate Prisma client (required before anything works)
+  npm run db:migrate       # create all database tables
+  npm run db:seed          # seed categories and news tags
+  npm run dev              # start API (port 4000) + Web (port 3000) in parallel
+
+Verify working:
+  curl http://localhost:4000/health/ready
+  # Expected: {"status":"ok","checks":{"database":"ok","redis":"ok"}}
+
+GCS bucket CORS policy (required for client-direct signed URL uploads):
+  Create a file named cors.json:
+  [{"origin":["http://localhost:3000","https://livingsyria.com"],"method":["PUT","POST"],"responseHeader":["Content-Type"],"maxAgeSeconds":3600}]
+
+  Apply it:
+  gsutil cors set cors.json gs://livingsyria-media
+
+  Without this, browser uploads to GCS via signed URL will fail with CORS errors.
+
+================================================================================
+SECTION 14 — ACCEPTANCE CRITERIA (ALL MUST PASS)
+================================================================================
+
+API:
+[ ] GET /health/ready returns 200 with database:'ok' and redis:'ok'
+[ ] POST /auth/register creates user and returns user object
+[ ] GET /listings returns paginated data with meta.nextCursor field
+[ ] POST /listings (authenticated) creates listing with status PENDING_REVIEW
+[ ] PATCH /listings/:id rejects unknown fields (only allowlisted fields accepted)
+[ ] GET /listings/:slug returns full listing with images, realEstate/vehicle/job detail
+[ ] POST /upload/sign returns signedUrl + fields (no binary data accepted by API)
+[ ] POST /upload/confirm verifies GCS path ownership and file existence
+[ ] GET /news returns published articles without bodyAr/bodyEn fields
+[ ] GET /admin/listings/pending returns pending listings (admin token required)
+[ ] POST /admin/listings/:id/approve sets ACTIVE + creates audit log + notification
+[ ] POST /devices registers token (upsert). DELETE /devices/:token deactivates.
+[ ] GET /conversations/:id/messages returns nextCursor + hasMore fields
+[ ] GET /users/me/unread returns { messages: number, notifications: number }
+[ ] Null origin requests (no Origin header) are accepted by CORS
+[ ] POST /payments/create-intent returns clientSecret for authenticated user
+[ ] POST /webhooks/stripe with valid signature marks transaction COMPLETED and upgrades listing
+[ ] Password reset email sent via Firebase sendPasswordResetEmail() — no backend error
+
+AI Features:
+[ ] POST /api/v1/admin/news/ingest triggers newsIngestion service and returns 202
+[ ] After ingest, new NewsArticle records appear in DB with aiSummaryAr and aiTags populated
+[ ] POST /listings triggers moderation.moderateListing() asynchronously — listing gets moderationScore field set
+[ ] Listing with clearly safe content (score >= 0.85) is auto-approved to ACTIVE status
+[ ] POST /api/v1/admin/translate returns translatedText from Gemini
+[ ] New listing created without titleEn gets titleEn auto-populated within seconds via background translation
+
+Mobile Scaffold:
+[ ] apps/mobile directory exists with package.json, app.json, app.config.ts, placeholder screens
+[ ] packages/shared directory exists with PaginatedResponse type and LISTING_PRICING constants
+[ ] npm install completes without errors including mobile and shared packages
+[ ] apps/mobile/src/app/index.tsx renders without errors (expo start works)
+
+Frontend:
+[ ] Homepage loads with all sections in < 3 seconds
+[ ] Arabic homepage is fully RTL — all text flows right-to-left
+[ ] Language toggle switches /ar/ ↔ /en/ and persists preference
+[ ] Listings page filters (category, price, sort) update results correctly
+[ ] Listing detail shows tabs with correct dynamic fields per category
+[ ] Post a Listing 5-step wizard completes and creates listing
+[ ] Image upload: signed URL flow works — file goes direct to GCS not through API
+[ ] Login/register with email+password works
+[ ] Google sign-in works and creates user record
+[ ] Admin portal loads for admin role, redirects USER role to homepage
+[ ] Admin approve/reject updates listing status and shows in moderation queue
+[ ] Listing detail page has correct Arabic title in <title> and og:title meta tags
+[ ] News article page has correct Arabic title, description, and og:image meta tags
+[ ] /sitemap.xml returns valid XML with listing and news slugs
+[ ] /robots.txt blocks /admin/ and /account/
+
+Quality:
+[ ] npm run typecheck passes with zero errors
+[ ] No broken imports or missing modules
+[ ] All pages responsive at 375px width
+[ ] Forms show validation errors in both Arabic and English
+
+================================================================================
+SECTION 16 — MOBILE APP CONTEXT (SCAFFOLD BUILT — SCREENS IN PHASE 2)
+================================================================================
+
+The React Native + Expo mobile app monorepo scaffold has been created in
+apps/mobile/ as specified in Section 10B. The API is fully mobile-ready.
+Phase 2 will build the actual screens and navigation on top of this scaffold.
+
+What is built in this session:
+- apps/mobile/ scaffold with package.json, app.json, app.config.ts, placeholder screens
+- packages/shared/ with shared types, Zod schemas, and constants
+- API contracts: devices, cursor pagination, lean payloads, CORS null origin, deepLinks
+
+What Phase 2 will add (NOT in this session):
+- All mobile screens (home, listings, news, auth, account, messages)
+- Expo Router navigation stack with tab bar
+- Push notification handlers (foreground + background + tap)
+- Expo EAS Build configuration (eas.json)
+- App Store and Google Play submission pipeline
+- Offline-first caching with TanStack Query networkMode='offlineFirst'
+- expo-secure-store for token storage (never AsyncStorage)
+- FlashList for high-performance listing scrolls
+
+The API built in this session requires ZERO changes to support the mobile app.
+All mobile-readiness is already baked in — devices endpoint, cursor pagination,
+lean payloads, CORS null origin, X-App-Version enforcement, deepLinks on all
+notifications, nextCursor on all lists, and /users/me/unread for tab bar badges.
+
+================================================================================
+END OF BUILD SPECIFICATION
+================================================================================
