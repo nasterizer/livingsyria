@@ -9,18 +9,58 @@ import { Helmet } from "react-helmet-async";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, ArrowLeft, MapPin, Sparkles, TrendingUp } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  MapPin,
+  Heart,
+  Clock,
+  Car,
+  Home as HomeIcon,
+  Briefcase,
+  Smartphone,
+  Wrench,
+  Newspaper,
+  Tag,
+} from "lucide-react";
 import { SmartImage } from "@/components/SmartImage";
-import { imageUrl, gradientFor, monogramFor } from "@/lib/image";
+import { imageUrl } from "@/lib/image";
+
+const CATEGORY_ICONS: Record<string, { icon: typeof Car; color: string }> = {
+  cars: { icon: Car, color: "bg-blue-500" },
+  vehicles: { icon: Car, color: "bg-blue-500" },
+  realestate: { icon: HomeIcon, color: "bg-emerald-500" },
+  "real-estate": { icon: HomeIcon, color: "bg-emerald-500" },
+  property: { icon: HomeIcon, color: "bg-emerald-500" },
+  jobs: { icon: Briefcase, color: "bg-purple-500" },
+  electronics: { icon: Smartphone, color: "bg-amber-500" },
+  services: { icon: Wrench, color: "bg-rose-500" },
+  news: { icon: Newspaper, color: "bg-indigo-500" },
+};
+
+const FALLBACK_COLORS = [
+  "bg-blue-500",
+  "bg-emerald-500",
+  "bg-purple-500",
+  "bg-amber-500",
+  "bg-rose-500",
+  "bg-indigo-500",
+  "bg-teal-500",
+  "bg-orange-500",
+];
 
 export default function Home() {
   const { t, locale, dir } = useI18n();
   const isRtl = dir === "rtl";
-  const ArrowIcon = isRtl ? ArrowLeft : ArrowRight;
+  const ChevronEnd = isRtl ? ChevronLeft : ChevronRight;
 
   const { data: newsData, isLoading: isLoadingNews } = useListNews({ limit: 6 });
   const { data: listingsData, isLoading: isLoadingListings } = useListListings({ limit: 8 });
   const { data: categoriesData } = useListCategories();
+
+  const listingsCountLabel = listingsData?.data?.length
+    ? `${listingsData.data.length}+`
+    : "12,400+";
 
   return (
     <>
@@ -30,122 +70,181 @@ export default function Home() {
       </Helmet>
 
       {/* HERO */}
-      <section className="relative overflow-hidden">
-        <div
-          className="absolute inset-0 -z-10"
-          style={{
-            background:
-              "radial-gradient(ellipse 80% 60% at 50% 0%, hsl(15 70% 50% / 0.18), transparent 60%), radial-gradient(ellipse 60% 50% at 80% 100%, hsl(190 50% 40% / 0.12), transparent 60%), hsl(40 40% 96%)",
-          }}
-        />
-        <div className="absolute inset-0 -z-10 opacity-[0.04]" style={{
-          backgroundImage:
-            "url(\"data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23000' fill-opacity='1'%3E%3Cpath d='M30 0l30 30-30 30L0 30z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E\")",
-        }} />
+      <section className="relative pt-8 pb-12 overflow-hidden">
+        <div className="container mx-auto px-4">
+          <div
+            className="rounded-[2.5rem] p-6 md:p-12 relative overflow-hidden shadow-2xl flex flex-col md:flex-row items-center gap-8 min-h-[400px]"
+            style={{
+              backgroundColor: "hsl(160 84% 9%)",
+              boxShadow: "0 25px 50px -12px hsl(160 84% 9% / 0.25)",
+            }}
+          >
+            {/* Decorative blobs */}
+            <div className="absolute top-0 end-0 w-96 h-96 bg-emerald-500 rounded-full mix-blend-multiply filter blur-3xl opacity-50 translate-x-1/3 -translate-y-1/3" />
+            <div className="absolute bottom-0 start-0 w-96 h-96 bg-amber-500 rounded-full mix-blend-multiply filter blur-3xl opacity-30 -translate-x-1/3 translate-y-1/3" />
 
-        <div className="container mx-auto px-4 pt-16 pb-20 md:pt-24 md:pb-28">
-          <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-card border border-border/60 shadow-sm mb-6">
-              <Sparkles className="h-3.5 w-3.5 text-primary" />
-              <span className="text-xs font-semibold tracking-wide text-foreground">
-                {t("home.hero.eyebrow")}
-              </span>
+            <div className="relative z-10 flex-1 space-y-6">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-emerald-50">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                <span className="text-sm font-medium">{t("home.hero.eyebrow")}</span>
+              </div>
+
+              <h1 className="text-4xl md:text-6xl font-bold text-white leading-tight">
+                {t("home.hero.title_lead")}
+                <br />
+                <span
+                  className="text-transparent bg-clip-text"
+                  style={{
+                    backgroundImage:
+                      "linear-gradient(to left, hsl(38 92% 65%), hsl(38 92% 50%))",
+                  }}
+                >
+                  {t("home.hero.title_accent")}
+                </span>
+              </h1>
+
+              <p className="text-emerald-100 text-lg md:text-xl max-w-lg leading-relaxed">
+                {t("home.hero.subtitle")}
+              </p>
+
+              <div className="flex flex-wrap items-center gap-3 pt-2">
+                <Button
+                  asChild
+                  size="lg"
+                  className="rounded-full h-12 px-7 bazaar-accent-gradient hover:opacity-90 text-foreground border-0 shadow-lg shadow-amber-500/30 font-bold"
+                >
+                  <Link href="/listings">
+                    {t("home.hero.cta_primary")}
+                    <ChevronEnd className="h-5 w-5 ms-1" />
+                  </Link>
+                </Button>
+                <Button
+                  asChild
+                  size="lg"
+                  variant="outline"
+                  className="rounded-full h-12 px-7 bg-white/10 backdrop-blur-md text-white border-white/20 hover:bg-white/20 hover:text-white"
+                >
+                  <Link href="/news">{t("home.hero.cta_secondary")}</Link>
+                </Button>
+              </div>
+
+              <div className="flex flex-wrap gap-3 pt-4">
+                <HeroStat value={listingsCountLabel} label={t("home.hero.stat_listings")} />
+                <HeroStat value="320+" label={t("home.hero.stat_cities")} />
+                <HeroStat value="AI" label={t("home.hero.stat_ai")} />
+              </div>
             </div>
-            <h1 className="text-4xl md:text-6xl font-serif font-bold leading-[1.1] text-foreground mb-6">
-              {t("home.hero.title")}
-            </h1>
-            <p className="text-lg md:text-xl text-muted-foreground max-w-2xl leading-relaxed mb-8">
-              {t("home.hero.subtitle")}
-            </p>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button asChild size="lg" className="rounded-full h-12 px-7 shadow-md hover:shadow-lg transition-shadow">
-                <Link href="/listings">
-                  {t("home.hero.cta_primary")}
-                  <ArrowIcon className="h-4 w-4 ms-2" />
-                </Link>
-              </Button>
-              <Button
-                asChild
-                size="lg"
-                variant="outline"
-                className="rounded-full h-12 px-7 bg-card/60 backdrop-blur"
+
+            <div className="relative z-10 w-full md:w-5/12 h-64 md:h-[350px]">
+              <div className="absolute inset-0 rounded-[2rem] overflow-hidden border-4 border-white/20 shadow-2xl transform rotate-3 hover:rotate-0 transition-transform duration-500">
+                <img
+                  src="/images/hero-vibrant.png"
+                  alt="Syria"
+                  className="w-full h-full object-cover"
+                />
+                <div
+                  className="absolute inset-0"
+                  style={{
+                    background:
+                      "linear-gradient(to top, hsl(160 84% 9% / 0.6), transparent)",
+                  }}
+                />
+              </div>
+              <div
+                className="absolute -start-4 bottom-12 bg-card rounded-2xl p-3 shadow-xl transform -rotate-6 animate-bounce"
+                style={{ animationDuration: "3s" }}
               >
-                <Link href="/news">{t("home.hero.cta_secondary")}</Link>
-              </Button>
-            </div>
-          </div>
-
-          {/* Categories rail */}
-          {categoriesData?.data && categoriesData.data.length > 0 && (
-            <div className="mt-14">
-              <div className="flex items-end justify-between mb-5">
-                <div>
-                  <h2 className="text-lg font-bold text-foreground">{t("home.categories")}</h2>
-                  <p className="text-sm text-muted-foreground">{t("home.categories.subtitle")}</p>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-600">
+                    <Heart className="w-5 h-5 fill-current" />
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">{t("home.hero.float_sold")}</div>
+                    <div className="font-bold text-foreground">{t("home.hero.float_where")}</div>
+                  </div>
                 </div>
               </div>
-              <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-thin">
-                {categoriesData.data.map((cat) => {
-                  const name = locale === "ar" ? cat.nameAr : cat.nameEn || cat.nameAr;
-                  const palette = gradientFor(cat.slug);
-                  return (
-                    <Link
-                      key={cat.id}
-                      href={`/listings?category=${cat.slug}`}
-                      className="group shrink-0"
-                    >
-                      <div
-                        className="w-32 h-32 rounded-2xl flex flex-col items-center justify-center text-center px-3 border border-border/60 shadow-sm transition-all group-hover:shadow-md group-hover:-translate-y-0.5"
-                        style={{
-                          background: `linear-gradient(135deg, ${palette.bg}, ${palette.mid}33)`,
-                        }}
-                      >
-                        <div
-                          className="w-10 h-10 rounded-xl flex items-center justify-center font-serif font-bold text-base mb-2"
-                          style={{ background: palette.fg, color: "white" }}
-                        >
-                          {monogramFor(name)}
-                        </div>
-                        <div className="text-sm font-semibold text-foreground line-clamp-2 leading-tight">
-                          {name}
-                        </div>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
             </div>
-          )}
+          </div>
         </div>
       </section>
 
-      <div className="container mx-auto px-4 pb-16 space-y-20">
-        {/* NEWS */}
-        <section>
+      {/* CATEGORIES */}
+      {categoriesData?.data && categoriesData.data.length > 0 && (
+        <section className="mb-12">
+          <div className="container mx-auto px-4">
+            <h2 className="text-2xl font-bold mb-6 text-foreground">
+              {t("home.categories")}
+            </h2>
+            <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-4 -mx-4 px-4 snap-x">
+              {categoriesData.data.map((cat, i) => {
+                const name = locale === "ar" ? cat.nameAr : cat.nameEn || cat.nameAr;
+                const meta =
+                  CATEGORY_ICONS[cat.slug] ||
+                  CATEGORY_ICONS[cat.slug.toLowerCase()] || {
+                    icon: Tag,
+                    color: FALLBACK_COLORS[i % FALLBACK_COLORS.length],
+                  };
+                const Icon = meta.icon;
+                return (
+                  <Link
+                    key={cat.id}
+                    href={`/listings?category=${cat.slug}`}
+                    className="snap-start shrink-0 w-32 h-40 rounded-3xl relative overflow-hidden group cursor-pointer shadow-sm hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1"
+                  >
+                    <div
+                      className={`absolute inset-0 ${meta.color} opacity-90 group-hover:opacity-100 transition-opacity`}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+                    <div className="absolute inset-0 p-4 flex flex-col items-center justify-center text-white">
+                      <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                        <Icon className="w-7 h-7" />
+                      </div>
+                      <span className="font-bold text-lg text-center line-clamp-2 leading-tight">
+                        {name}
+                      </span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* NEWS */}
+      <section className="mb-14">
+        <div className="container mx-auto px-4">
           <div className="flex items-end justify-between mb-6">
             <div>
-              <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary mb-2">
-                <TrendingUp className="h-3.5 w-3.5" />
-                {t("nav.news")}
-              </div>
-              <h2 className="text-3xl md:text-4xl font-serif font-bold text-foreground">
+              <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
+                <span className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500" />
+                </span>
                 {t("home.latest_news")}
               </h2>
+              <p className="text-muted-foreground text-sm mt-1">
+                {t("home.latest_news.subtitle")}
+              </p>
             </div>
-            <Link
-              href="/news"
-              className="hidden sm:inline-flex items-center gap-2 text-sm font-semibold text-primary hover:gap-3 transition-all"
+            <Button
+              asChild
+              variant="link"
+              className="text-primary font-bold hover:text-primary/80 hidden sm:inline-flex"
             >
-              {t("common.view_all")}
-              <ArrowIcon className="h-4 w-4" />
-            </Link>
+              <Link href="/news">
+                {t("common.view_all")}
+                <ChevronEnd className="w-4 h-4 ms-1" />
+              </Link>
+            </Button>
           </div>
 
           {isLoadingNews ? (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="flex gap-5 overflow-x-auto hide-scrollbar pb-6 -mx-4 px-4">
               {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="space-y-3">
-                  <Skeleton className="aspect-[16/10] w-full rounded-2xl" />
+                <div key={i} className="shrink-0 w-[300px] sm:w-[380px] space-y-3">
+                  <Skeleton className="h-48 w-full rounded-[1.5rem]" />
                   <Skeleton className="h-5 w-3/4" />
                   <Skeleton className="h-4 w-full" />
                 </div>
@@ -154,82 +253,89 @@ export default function Home() {
           ) : !newsData?.data || newsData.data.length === 0 ? (
             <EmptyTile message={t("home.empty_news")} />
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {newsData.data.slice(0, 6).map((article, idx) => {
-                const title = locale === "ar" ? article.titleAr : article.titleEn || article.titleAr;
+            <div className="flex gap-5 overflow-x-auto hide-scrollbar pb-6 -mx-4 px-4 snap-x">
+              {newsData.data.slice(0, 6).map((article) => {
+                const title =
+                  locale === "ar" ? article.titleAr : article.titleEn || article.titleAr;
                 const summary =
-                  locale === "ar" ? article.aiSummaryAr : article.aiSummaryEn || article.aiSummaryAr;
-                const featured = idx === 0;
+                  locale === "ar"
+                    ? article.aiSummaryAr
+                    : article.aiSummaryEn || article.aiSummaryAr;
                 return (
                   <Link
                     key={article.id}
                     href={`/news/${article.slug}`}
-                    className={`group block ${featured ? "md:col-span-2 lg:row-span-2" : ""}`}
+                    className="snap-start shrink-0 w-[300px] sm:w-[380px] bg-card rounded-[2rem] p-2 shadow-sm border border-border/60 group hover:shadow-xl transition-all duration-300"
                   >
-                    <article className="h-full bg-card rounded-2xl overflow-hidden border border-border/60 hover:border-primary/40 hover:shadow-lg transition-all duration-300">
-                      <div className={`relative w-full overflow-hidden ${featured ? "aspect-[16/10] lg:aspect-[16/12]" : "aspect-[16/10]"}`}>
-                        <SmartImage
-                          src={article.coverImageUrl}
-                          alt={title}
-                          seed={article.slug}
-                          imgClassName="group-hover:scale-105"
-                        />
-                        <div className="absolute top-3 start-3">
-                          <Badge className="bg-card/95 backdrop-blur text-foreground border border-border/60 shadow-sm">
-                            {article.sourceName}
-                          </Badge>
-                        </div>
+                    <div className="relative h-48 rounded-[1.5rem] overflow-hidden mb-4">
+                      <SmartImage
+                        src={article.coverImageUrl}
+                        alt={title}
+                        seed={article.slug}
+                        imgClassName="group-hover:scale-105 transition-transform duration-500"
+                      />
+                      <div className="absolute top-3 end-3 flex gap-2">
+                        <Badge className="bg-card/90 text-foreground hover:bg-card border-0 font-bold backdrop-blur-sm">
+                          {article.sourceName}
+                        </Badge>
                       </div>
-                      <div className={`p-5 ${featured ? "md:p-7" : ""}`}>
-                        {summary && (
-                          <div className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-primary mb-2">
-                            <Sparkles className="h-3 w-3" />
-                            {t("news.ai_summary.short")}
-                          </div>
-                        )}
-                        <h3
-                          className={`font-serif font-bold leading-tight text-foreground group-hover:text-primary transition-colors line-clamp-3 ${
-                            featured ? "text-2xl md:text-3xl mb-3" : "text-lg mb-2"
-                          }`}
+                    </div>
+                    <div className="px-3 pb-3">
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+                        <span className="font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-md">
+                          {article.sourceName}
+                        </span>
+                        <span className="w-1 h-1 rounded-full bg-border" />
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {formatRelative(article.publishedAt, locale)}
+                        </span>
+                      </div>
+                      <h3 className="font-bold text-lg text-foreground leading-tight mb-3 line-clamp-2 group-hover:text-primary transition-colors">
+                        {title}
+                      </h3>
+                      {summary && (
+                        <div
+                          className="rounded-xl p-3 flex gap-3 items-start"
+                          style={{
+                            backgroundColor: "hsl(38 92% 95%)",
+                            border: "1px solid hsl(38 92% 88%)",
+                          }}
                         >
-                          {title}
-                        </h3>
-                        {summary && (
-                          <p className={`text-muted-foreground leading-relaxed ${featured ? "line-clamp-4" : "line-clamp-2"}`}>
+                          <div className="w-6 h-6 rounded-full bg-amber-100 flex items-center justify-center shrink-0 mt-0.5">
+                            <span className="text-[10px] font-black text-amber-700">AI</span>
+                          </div>
+                          <p className="text-sm text-foreground/80 leading-snug line-clamp-3">
                             {summary}
                           </p>
-                        )}
-                        <div className="text-xs text-muted-foreground mt-4">
-                          {formatRelative(article.publishedAt, locale)}
                         </div>
-                      </div>
-                    </article>
+                      )}
+                    </div>
                   </Link>
                 );
               })}
             </div>
           )}
-        </section>
+        </div>
+      </section>
 
-        {/* LISTINGS */}
-        <section>
+      {/* LISTINGS */}
+      <section className="mb-20">
+        <div className="container mx-auto px-4">
           <div className="flex items-end justify-between mb-6">
-            <div>
-              <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-accent mb-2">
-                <Sparkles className="h-3.5 w-3.5" />
-                {t("nav.listings")}
-              </div>
-              <h2 className="text-3xl md:text-4xl font-serif font-bold text-foreground">
-                {t("home.recent_listings")}
-              </h2>
-            </div>
-            <Link
-              href="/listings"
-              className="hidden sm:inline-flex items-center gap-2 text-sm font-semibold text-accent hover:gap-3 transition-all"
+            <h2 className="text-2xl font-bold text-foreground">
+              {t("home.recent_listings")}
+            </h2>
+            <Button
+              asChild
+              variant="link"
+              className="text-primary font-bold hover:text-primary/80 hidden sm:inline-flex"
             >
-              {t("common.view_all")}
-              <ArrowIcon className="h-4 w-4" />
-            </Link>
+              <Link href="/listings">
+                {t("common.view_all")}
+                <ChevronEnd className="w-4 h-4 ms-1" />
+              </Link>
+            </Button>
           </div>
 
           {isLoadingListings ? (
@@ -237,8 +343,8 @@ export default function Home() {
               {Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} className="masonry-item">
                   <Skeleton
-                    className="w-full rounded-2xl"
-                    style={{ height: 180 + ((i * 47) % 140) }}
+                    className="w-full rounded-3xl"
+                    style={{ height: 220 + ((i * 47) % 140) }}
                   />
                 </div>
               ))}
@@ -248,39 +354,67 @@ export default function Home() {
           ) : (
             <div className="masonry-grid">
               {listingsData.data.slice(0, 8).map((listing, idx) => {
-                const title = locale === "ar" ? listing.titleAr : listing.titleEn || listing.titleAr;
+                const title =
+                  locale === "ar" ? listing.titleAr : listing.titleEn || listing.titleAr;
                 const price = listing.isFree
                   ? t("listings.free")
                   : listing.priceCents
                   ? formatCurrency(listing.priceCents, listing.currency, locale)
                   : t("listings.contact_for_price");
-                // Vary heights for the masonry feel
-                const heights = [200, 280, 240, 320, 220, 260, 300, 240];
+                const aspects = [
+                  "aspect-[3/4]",
+                  "aspect-square",
+                  "aspect-[4/5]",
+                  "aspect-square",
+                  "aspect-[3/4]",
+                  "aspect-square",
+                  "aspect-[4/5]",
+                  "aspect-square",
+                ];
                 return (
                   <div key={listing.id} className="masonry-item">
-                    <Link href={`/listings/${listing.slug}`} className="group block">
-                      <div className="relative bg-card rounded-2xl overflow-hidden border border-border/60 hover:border-accent/40 hover:shadow-lg transition-all duration-300">
+                    <Link href={`/listings/${listing.slug}`} className="block">
+                      <div className="bg-card rounded-3xl p-2 shadow-sm border border-border/60 group hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                          }}
+                          aria-label={t("listings.save")}
+                          className="absolute top-4 start-4 z-10 w-10 h-10 bg-card/80 backdrop-blur-md rounded-full flex items-center justify-center text-muted-foreground hover:text-rose-500 hover:bg-card shadow-sm transition-all"
+                        >
+                          <Heart className="w-5 h-5" />
+                        </button>
                         <div
-                          className="relative w-full overflow-hidden"
-                          style={{ height: heights[idx % heights.length] }}
+                          className={`relative w-full ${aspects[idx % aspects.length]} rounded-[1.5rem] overflow-hidden mb-3 bg-secondary`}
                         >
                           <SmartImage
                             src={imageUrl(listing.primaryImageUrl)}
                             alt={title}
                             seed={listing.slug}
-                            imgClassName="group-hover:scale-105"
+                            imgClassName="group-hover:scale-105 transition-transform duration-500"
                           />
+                          <div className="absolute bottom-3 end-3">
+                            <Badge className="bg-black/60 text-white border-0 backdrop-blur-md px-2 py-1">
+                              {listing.city}
+                            </Badge>
+                          </div>
                         </div>
-                        <div className="p-4">
-                          <h3 className="font-semibold text-foreground line-clamp-2 leading-snug mb-2 group-hover:text-accent transition-colors">
+                        <div className="px-2 pb-2">
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2 font-medium">
+                            <MapPin className="w-3.5 h-3.5 text-primary" />
+                            {listing.city}
+                          </div>
+                          <h3 className="font-semibold text-foreground text-sm leading-snug mb-3 line-clamp-2">
                             {title}
                           </h3>
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="font-serif font-bold text-accent text-base">{price}</div>
-                            <div className="text-xs text-muted-foreground flex items-center gap-1 truncate">
-                              <MapPin className="h-3 w-3 shrink-0" />
-                              <span className="truncate">{listing.city}</span>
-                            </div>
+                          <div
+                            className="inline-flex items-baseline px-3 py-1.5 rounded-xl"
+                            style={{ backgroundColor: "hsl(160 84% 95%)" }}
+                          >
+                            <span className="font-bold text-primary text-base me-1">
+                              {price}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -291,23 +425,32 @@ export default function Home() {
             </div>
           )}
 
-          <div className="mt-8 sm:hidden">
-            <Button asChild variant="outline" className="w-full rounded-full h-12">
-              <Link href="/listings">
-                {t("common.view_all")}
-                <ArrowIcon className="h-4 w-4 ms-2" />
-              </Link>
+          <div className="mt-10 text-center">
+            <Button
+              asChild
+              className="rounded-full bg-foreground text-background hover:bg-foreground/90 px-8 h-12 font-bold shadow-xl"
+            >
+              <Link href="/listings">{t("home.load_more")}</Link>
             </Button>
           </div>
-        </section>
-      </div>
+        </div>
+      </section>
     </>
+  );
+}
+
+function HeroStat({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="flex flex-col bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 min-w-[110px]">
+      <span className="text-2xl font-bold text-amber-400">{value}</span>
+      <span className="text-xs text-emerald-100 mt-0.5">{label}</span>
+    </div>
   );
 }
 
 function EmptyTile({ message }: { message: string }) {
   return (
-    <div className="rounded-2xl border-2 border-dashed border-border/70 bg-card/50 py-16 text-center">
+    <div className="rounded-3xl border-2 border-dashed border-border/70 bg-card/50 py-16 text-center">
       <p className="text-muted-foreground">{message}</p>
     </div>
   );
