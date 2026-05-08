@@ -112,13 +112,14 @@ export default function NewsDetail() {
             )}
 
             {body ? (
-              <div 
-                className="prose dark:prose-invert prose-lg md:prose-xl max-w-none 
+              <div
+                className="prose dark:prose-invert prose-lg md:prose-xl max-w-none
                            prose-p:leading-relaxed prose-headings:font-serif
                            prose-a:text-primary hover:prose-a:text-primary/80
-                           prose-img:rounded-xl"
-                dangerouslySetInnerHTML={{ __html: body }}
-              />
+                           prose-img:rounded-xl whitespace-pre-wrap"
+              >
+                {body}
+              </div>
             ) : summary ? (
               <p className="text-xl leading-relaxed text-foreground/90">{summary}</p>
             ) : null}
