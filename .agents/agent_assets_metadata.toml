@@ -1,0 +1,8 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "clFYpzczniy7nXwRuxcBX"
+uri = "file://artifacts/web/public/hero-damascus.png"
+type = "image"
+title = "Syrian architectural scene with warm light"
