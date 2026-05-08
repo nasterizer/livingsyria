@@ -1,14 +1,17 @@
-import { useI18n, formatDate } from "@/lib/i18n";
+import { useI18n, formatRelative } from "@/lib/i18n";
 import { useListNews } from "@workspace/api-client-react";
 import { Link, useSearch } from "wouter";
 import { Helmet } from "react-helmet-async";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Sparkles, ArrowRight, ArrowLeft, ExternalLink } from "lucide-react";
+import { SmartImage } from "@/components/SmartImage";
 
 export default function NewsList() {
-  const { t, locale } = useI18n();
+  const { t, locale, dir } = useI18n();
+  const isRtl = dir === "rtl";
+  const ArrowIcon = isRtl ? ArrowLeft : ArrowRight;
   const searchString = useSearch();
   const searchParams = new URLSearchParams(searchString);
   const page = parseInt(searchParams.get("page") || "1", 10);
@@ -19,121 +22,162 @@ export default function NewsList() {
   return (
     <>
       <Helmet>
-        <title>{t("nav.news")} - LivingSyria</title>
-        <meta name="description" content="Latest news from trusted Syrian sources" />
+        <title>{t("nav.news")} — LivingSyria</title>
+        <meta name="description" content={t("news.subtitle")} />
       </Helmet>
 
-      <div className="bg-card border-b border-border/40 py-8 mb-8">
-        <div className="container mx-auto px-4">
-          <h1 className="text-4xl font-serif font-bold text-foreground mb-4">{t("nav.news")}</h1>
-          <p className="text-muted-foreground max-w-2xl text-lg">
-            {locale === "ar" 
-              ? "مختارات من أهم الأخبار المحلية، ملخصة لتناسب وقتك." 
-              : "Selections of the most important local news, summarized for your convenience."}
+      <section className="relative border-b border-border/60 overflow-hidden">
+        <div
+          className="absolute inset-0 -z-10"
+          style={{
+            background:
+              "radial-gradient(ellipse 70% 50% at 30% 0%, hsl(15 70% 50% / 0.10), transparent 60%), hsl(40 40% 96%)",
+          }}
+        />
+        <div className="container mx-auto px-4 py-12 md:py-16">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-card border border-border/60 shadow-sm mb-4">
+            <Sparkles className="h-3.5 w-3.5 text-primary" />
+            <span className="text-xs font-semibold tracking-wide text-foreground">
+              {t("news.ai_summary")}
+            </span>
+          </div>
+          <h1 className="text-4xl md:text-5xl font-serif font-bold text-foreground mb-3">
+            {t("nav.news")}
+          </h1>
+          <p className="text-lg text-muted-foreground max-w-2xl leading-relaxed">
+            {t("news.subtitle")}
           </p>
         </div>
-      </div>
+      </section>
 
-      <div className="container mx-auto px-4 pb-16">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {isLoading ? (
-            Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="space-y-4">
-                <Skeleton className="h-64 w-full rounded-xl" />
+      <div className="container mx-auto px-4 py-10 max-w-3xl">
+        {isLoading ? (
+          <div className="space-y-6">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="bg-card rounded-2xl p-6 border border-border/60 space-y-4">
+                <Skeleton className="aspect-[16/9] w-full rounded-xl" />
                 <Skeleton className="h-6 w-3/4" />
                 <Skeleton className="h-4 w-full" />
                 <Skeleton className="h-4 w-5/6" />
-                <Skeleton className="h-4 w-1/4 mt-4" />
               </div>
-            ))
-          ) : data?.data.length === 0 ? (
-            <div className="col-span-full py-16 text-center text-muted-foreground">
-              {locale === "ar" ? "لا توجد أخبار حالياً." : "No news available."}
-            </div>
-          ) : (
-            data?.data.map((article) => {
-              const title = locale === "ar" ? article.titleAr : (article.titleEn || article.titleAr);
-              const summary = locale === "ar" ? article.aiSummaryAr : (article.aiSummaryEn || article.aiSummaryAr);
-              
+            ))}
+          </div>
+        ) : !data?.data || data.data.length === 0 ? (
+          <div className="rounded-2xl border-2 border-dashed border-border/70 bg-card/50 py-20 text-center text-muted-foreground">
+            {t("news.empty")}
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {data.data.map((article) => {
+              const title = locale === "ar" ? article.titleAr : article.titleEn || article.titleAr;
+              const summary =
+                locale === "ar" ? article.aiSummaryAr : article.aiSummaryEn || article.aiSummaryAr;
+
               return (
-                <Link key={article.id} href={`/news/${article.slug}`} className="group flex flex-col">
-                  <Card className="h-full overflow-hidden transition-all duration-300 hover:shadow-lg border-border/50 hover:border-primary/30 flex flex-col bg-card">
-                    {article.coverImageUrl ? (
-                      <div className="h-56 w-full overflow-hidden relative flex-shrink-0">
-                        <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors z-10"></div>
-                        <img 
-                          src={article.coverImageUrl} 
-                          alt={title} 
-                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                          loading="lazy"
-                        />
-                      </div>
-                    ) : (
-                      <div className="h-56 w-full bg-secondary flex items-center justify-center flex-shrink-0">
-                        <span className="text-4xl font-serif text-muted-foreground/30">L S</span>
-                      </div>
-                    )}
-                    <CardContent className="p-6 flex-1 flex flex-col">
-                      <div className="flex items-center justify-between mb-4">
-                        <Badge variant="secondary" className="bg-primary/10 text-primary hover:bg-primary/20 font-medium">
+                <article
+                  key={article.id}
+                  className="group bg-card rounded-2xl overflow-hidden border border-border/60 hover:border-primary/40 hover:shadow-lg transition-all duration-300"
+                >
+                  <Link href={`/news/${article.slug}`} className="block">
+                    <div className="aspect-[16/9] relative overflow-hidden bg-secondary">
+                      <SmartImage
+                        src={article.coverImageUrl}
+                        alt={title}
+                        seed={article.slug}
+                        imgClassName="group-hover:scale-[1.03]"
+                      />
+                      <div className="absolute top-4 start-4 flex items-center gap-2">
+                        <Badge className="bg-card/95 backdrop-blur text-foreground border border-border/60 shadow-sm">
                           {article.sourceName}
                         </Badge>
-                        <span className="text-sm text-muted-foreground">
-                          {formatDate(article.publishedAt, locale)}
-                        </span>
                       </div>
-                      <h2 className="font-bold text-xl mb-4 line-clamp-3 group-hover:text-primary transition-colors font-serif leading-snug">
+                    </div>
+                  </Link>
+
+                  <div className="p-6 md:p-7">
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground mb-3">
+                      <span>{formatRelative(article.publishedAt, locale)}</span>
+                      {article.tags && article.tags.length > 0 && (
+                        <>
+                          <span className="opacity-50">·</span>
+                          <div className="flex gap-1.5 flex-wrap">
+                            {article.tags.slice(0, 3).map((tg) => (
+                              <span
+                                key={tg}
+                                className="px-2 py-0.5 rounded-full bg-secondary text-foreground/70 text-[11px] font-medium"
+                              >
+                                #{tg}
+                              </span>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    <Link href={`/news/${article.slug}`}>
+                      <h2 className="font-serif text-2xl md:text-3xl font-bold leading-tight text-foreground hover:text-primary transition-colors mb-4">
                         {title}
                       </h2>
-                      {summary && (
-                        <p className="text-muted-foreground line-clamp-3 leading-relaxed mb-6 flex-1">
-                          {summary}
-                        </p>
-                      )}
-                      
-                      <div className="flex items-center text-primary font-medium text-sm mt-auto pt-4 border-t border-border/40">
-                        {t("news.read_more")}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              );
-            })
-          )}
-        </div>
+                    </Link>
 
-        {/* Pagination */}
+                    {summary && (
+                      <div className="rounded-xl bg-primary/5 border border-primary/15 p-4 md:p-5 mb-5">
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-primary mb-2">
+                          <Sparkles className="h-3 w-3" />
+                          {t("news.ai_summary")}
+                        </div>
+                        <p className="text-foreground/85 leading-relaxed">{summary}</p>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between flex-wrap gap-3">
+                      <Button asChild variant="ghost" size="sm" className="rounded-full text-primary hover:bg-primary/10">
+                        <Link href={`/news/${article.slug}`}>
+                          {t("news.read_more")}
+                          <ArrowIcon className="h-4 w-4 ms-1.5" />
+                        </Link>
+                      </Button>
+                      {article.sourceUrl && (
+                        <a
+                          href={article.sourceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 transition-colors"
+                        >
+                          {t("news.original_source")}
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+
         {data && data.meta.pages > 1 && (
-          <div className="flex justify-center items-center gap-4 mt-16">
-            <Button 
-              variant="outline" 
-              disabled={page <= 1}
-              asChild={page > 1}
-            >
+          <div className="flex justify-center items-center gap-3 mt-12">
+            <Button variant="outline" disabled={page <= 1} asChild={page > 1} className="rounded-full">
               {page > 1 ? (
-                <Link href={`/news?page=${page - 1}${tag ? `&tag=${tag}` : ''}`}>
-                  {locale === "ar" ? "السابق" : "Previous"}
-                </Link>
+                <Link href={`/news?page=${page - 1}${tag ? `&tag=${tag}` : ""}`}>{t("common.previous")}</Link>
               ) : (
-                <span>{locale === "ar" ? "السابق" : "Previous"}</span>
+                <span>{t("common.previous")}</span>
               )}
             </Button>
-            
-            <span className="text-sm font-medium">
-              {locale === "ar" ? `صفحة ${page} من ${data.meta.pages}` : `Page ${page} of ${data.meta.pages}`}
+            <span className="text-sm font-medium text-muted-foreground">
+              {t("common.page_of", { page, total: data.meta.pages })}
             </span>
-            
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               disabled={page >= data.meta.pages}
               asChild={page < data.meta.pages}
+              className="rounded-full"
             >
               {page < data.meta.pages ? (
-                <Link href={`/news?page=${page + 1}${tag ? `&tag=${tag}` : ''}`}>
-                  {locale === "ar" ? "التالي" : "Next"}
-                </Link>
+                <Link href={`/news?page=${page + 1}${tag ? `&tag=${tag}` : ""}`}>{t("common.next")}</Link>
               ) : (
-                <span>{locale === "ar" ? "التالي" : "Next"}</span>
+                <span>{t("common.next")}</span>
               )}
             </Button>
           </div>
