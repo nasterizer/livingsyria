@@ -17,7 +17,19 @@ const objectStorageService = new ObjectStorageService();
  * The client sends JSON metadata (name, size, contentType) — NOT the file.
  * Then uploads the file directly to the returned presigned URL.
  */
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const ALLOWED_UPLOAD_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+]);
+
 router.post("/storage/uploads/request-url", async (req: Request, res: Response) => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
   const parsed = RequestUploadUrlBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Missing or invalid required fields" });
@@ -26,6 +38,14 @@ router.post("/storage/uploads/request-url", async (req: Request, res: Response) 
 
   try {
     const { name, size, contentType } = parsed.data;
+    if (size > MAX_UPLOAD_BYTES) {
+      res.status(413).json({ error: `File too large (max ${MAX_UPLOAD_BYTES} bytes)` });
+      return;
+    }
+    if (!ALLOWED_UPLOAD_TYPES.has(contentType)) {
+      res.status(415).json({ error: "Unsupported content type" });
+      return;
+    }
 
     const uploadURL = await objectStorageService.getObjectEntityUploadURL();
     const objectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
