@@ -1,12 +1,6 @@
 {
-  "/_not-found/page": "app/_not-found/page.js",
   "/page": "app/page.js",
-  "/[locale]/listings/[slug]/page": "app/[locale]/listings/[slug]/page.js",
-  "/[locale]/news/[slug]/page": "app/[locale]/news/[slug]/page.js",
-  "/[locale]/account/listings/page": "app/[locale]/account/listings/page.js",
-  "/[locale]/listings/page": "app/[locale]/listings/page.js",
   "/[locale]/page": "app/[locale]/page.js",
-  "/[locale]/news/page": "app/[locale]/news/page.js",
   "/[locale]/listings/new/page": "app/[locale]/listings/new/page.js",
   "/[locale]/auth/login/page": "app/[locale]/auth/login/page.js"
 }

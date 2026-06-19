@@ -1,10 +1,14 @@
 "use client";
 
+import { useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
-import { useCreateListing, useListCategories, CreateListingBodyCurrency } from "@workspace/api-client-react";
+import {
+  useCreateListing,
+  useListCategories,
+  CreateListingBodyCurrency,
+} from "@workspace/api-client-react";
 import { useAuth } from "@workspace/replit-auth-web";
-import { ObjectUploader } from "@workspace/object-storage-web";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -29,38 +33,138 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { Store } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  Store,
+  ImagePlus,
+  X,
+  Loader2,
+  Upload,
+  Check,
+} from "lucide-react";
+
+const MAX_PHOTOS = 5;
+
+const SYRIAN_CITIES = [
+  { ar: "دمشق", en: "Damascus" },
+  { ar: "حلب", en: "Aleppo" },
+  { ar: "حمص", en: "Homs" },
+  { ar: "حماة", en: "Hama" },
+  { ar: "اللاذقية", en: "Latakia" },
+  { ar: "طرطوس", en: "Tartus" },
+  { ar: "دير الزور", en: "Deir ez-Zor" },
+  { ar: "الرقة", en: "Raqqa" },
+  { ar: "درعا", en: "Daraa" },
+  { ar: "السويداء", en: "As-Suwayda" },
+  { ar: "إدلب", en: "Idlib" },
+  { ar: "الحسكة", en: "Al-Hasakah" },
+  { ar: "القنيطرة", en: "Quneitra" },
+  { ar: "ريف دمشق", en: "Rural Damascus" },
+];
+
+const CATEGORY_ICONS: Record<string, string> = {
+  electronics: "📱",
+  "إلكترونيات": "📱",
+  cars: "🚗",
+  سيارات: "🚗",
+  vehicles: "🚗",
+  "real estate": "🏠",
+  عقارات: "🏠",
+  property: "🏠",
+  furniture: "🛋️",
+  أثاث: "🛋️",
+  clothing: "👗",
+  ملابس: "👗",
+  fashion: "👗",
+  jobs: "💼",
+  وظائف: "💼",
+  work: "💼",
+  services: "🔧",
+  خدمات: "🔧",
+  animals: "🐾",
+  حيوانات: "🐾",
+  pets: "🐾",
+  food: "🍽️",
+  طعام: "🍽️",
+  books: "📚",
+  كتب: "📚",
+  sports: "⚽",
+  رياضة: "⚽",
+  tools: "🔨",
+  أدوات: "🔨",
+};
+
+function getCategoryIcon(nameAr?: string, nameEn?: string, slug?: string): string {
+  const candidates = [nameAr, nameEn, slug].filter(Boolean) as string[];
+  for (const candidate of candidates) {
+    const lower = candidate.toLowerCase();
+    for (const [key, icon] of Object.entries(CATEGORY_ICONS)) {
+      if (lower.includes(key.toLowerCase()) || key.toLowerCase().includes(lower)) {
+        return icon;
+      }
+    }
+  }
+  return "📦";
+}
+
+const CURRENCIES = [
+  { value: CreateListingBodyCurrency.SYP, label: "ل.س", sublabel: "SYP" },
+  { value: CreateListingBodyCurrency.USD, label: "$", sublabel: "USD" },
+  { value: CreateListingBodyCurrency.EUR, label: "€", sublabel: "EUR" },
+];
 
 const formSchema = z.object({
-  categoryId: z.string().min(1, "Category is required"),
-  titleAr: z.string().min(3, "Title must be at least 3 characters"),
+  categoryId: z.string().min(1, "يرجى اختيار التصنيف"),
+  titleAr: z
+    .string()
+    .min(1, "هذا الحقل مطلوب")
+    .min(3, "العنوان يجب أن يكون 3 أحرف على الأقل"),
   titleEn: z.string().optional(),
-  descriptionAr: z.string().min(10, "Description must be at least 10 characters"),
+  descriptionAr: z
+    .string()
+    .min(1, "هذا الحقل مطلوب")
+    .min(10, "الوصف يجب أن يكون 10 أحرف على الأقل"),
   descriptionEn: z.string().optional(),
-  priceCents: z.coerce.number().optional(),
-  currency: z.nativeEnum(CreateListingBodyCurrency).default(CreateListingBodyCurrency.SYP),
+  priceCents: z.coerce
+    .number()
+    .min(0, "يجب أن يكون السعر رقماً موجباً")
+    .optional(),
+  currency: z
+    .nativeEnum(CreateListingBodyCurrency)
+    .default(CreateListingBodyCurrency.SYP),
   isFree: z.boolean().default(false),
   isNegotiable: z.boolean().default(false),
-  city: z.string().min(2, "City is required"),
+  city: z.string().min(2, "يرجى اختيار المدينة"),
   district: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
+
+interface UploadedFile {
+  objectPath: string;
+  previewUrl: string;
+  name: string;
+}
 
 export function PostListingForm() {
   const { t, locale, path } = useI18n();
   const { isAuthenticated, isLoading: isAuthLoading, login } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
-  const [imageObjectPaths, setImageObjectPaths] = useState<string[]>([]);
+
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: categories } = useListCategories();
   const createListing = useCreateListing();
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
+    mode: "onBlur",
     defaultValues: {
       categoryId: "",
       titleAr: "",
@@ -76,6 +180,78 @@ export function PostListingForm() {
   });
 
   const isFree = form.watch("isFree");
+  const selectedCategory = form.watch("categoryId");
+
+  const processFiles = useCallback(
+    async (files: FileList | File[]) => {
+      const fileArray = Array.from(files).filter((f) =>
+        f.type.startsWith("image/"),
+      );
+      const remaining = MAX_PHOTOS - uploadedFiles.length;
+      if (remaining <= 0) {
+        setUploadError(t("post.photos.max_reached"));
+        return;
+      }
+      const toUpload = fileArray.slice(0, remaining);
+      setUploadError(null);
+      setIsUploading(true);
+
+      try {
+        const results = await Promise.allSettled(
+          toUpload.map(async (file) => {
+            const previewUrl = URL.createObjectURL(file);
+            const res = await fetch("/api/storage/uploads/request-url", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                name: file.name,
+                size: file.size,
+                contentType: file.type,
+              }),
+            });
+            const { uploadURL, objectPath } = await res.json();
+            await fetch(uploadURL, {
+              method: "PUT",
+              headers: {
+                "Content-Type": file.type || "application/octet-stream",
+              },
+              body: file,
+            });
+            return { objectPath, previewUrl, name: file.name } as UploadedFile;
+          }),
+        );
+
+        const successful = results
+          .filter(
+            (r): r is PromiseFulfilledResult<UploadedFile> =>
+              r.status === "fulfilled",
+          )
+          .map((r) => r.value);
+
+        setUploadedFiles((prev) => [...prev, ...successful]);
+
+        if (results.some((r) => r.status === "rejected")) {
+          setUploadError(
+            locale === "ar"
+              ? "فشل رفع بعض الصور. يرجى المحاولة مجدداً."
+              : "Some photos failed to upload. Please try again.",
+          );
+        }
+      } finally {
+        setIsUploading(false);
+      }
+    },
+    [uploadedFiles.length, locale, t],
+  );
+
+  const removeFile = (objectPath: string) => {
+    setUploadedFiles((prev) => {
+      const file = prev.find((f) => f.objectPath === objectPath);
+      if (file) URL.revokeObjectURL(file.previewUrl);
+      return prev.filter((f) => f.objectPath !== objectPath);
+    });
+    setUploadError(null);
+  };
 
   const onSubmit = (data: FormValues) => {
     if (!isAuthenticated) return;
@@ -84,7 +260,7 @@ export function PostListingForm() {
         data: {
           ...data,
           country: "Syria",
-          imageObjectPaths,
+          imageObjectPaths: uploadedFiles.map((f) => f.objectPath),
         },
       },
       {
@@ -93,17 +269,22 @@ export function PostListingForm() {
             title: t("post.success"),
             description:
               locale === "ar"
-                ? "تم إضافة إعلانك بنجاح"
-                : "Your ad has been added successfully.",
+                ? "تم إضافة إعلانك بنجاح وسيظهر قريباً في السوق."
+                : "Your ad has been added and will appear in the market soon.",
           });
           router.push(path(`/listings/${res.data.slug}`));
         },
         onError: (err) => {
-          const msg = (err as unknown as { error?: { error?: string } })?.error?.error;
+          const msg = (err as unknown as { error?: { error?: string } })?.error
+            ?.error;
           toast({
             variant: "destructive",
-            title: t("common.error"),
-            description: msg || "Failed to create listing",
+            title: locale === "ar" ? "حدث خطأ" : t("common.error"),
+            description:
+              msg ||
+              (locale === "ar"
+                ? "تعذّر نشر الإعلان. يرجى المحاولة مجدداً."
+                : "Failed to create listing."),
           });
         },
       },
@@ -112,7 +293,9 @@ export function PostListingForm() {
 
   if (isAuthLoading) {
     return (
-      <div className="container py-24 text-center">{t("common.loading")}</div>
+      <div className="flex items-center justify-center py-32">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
     );
   }
 
@@ -122,7 +305,7 @@ export function PostListingForm() {
         <div className="w-16 h-16 mx-auto rounded-2xl bg-primary/10 flex items-center justify-center mb-5">
           <Store className="h-8 w-8 text-primary" />
         </div>
-        <h1 className="text-2xl font-serif font-bold mb-3">{t("auth.required.title")}</h1>
+        <h1 className="text-2xl font-bold mb-3">{t("auth.required.title")}</h1>
         <p className="text-muted-foreground mb-8">{t("auth.required.desc")}</p>
         <Button onClick={login} size="lg" className="rounded-full">
           {t("auth.login")}
@@ -131,212 +314,206 @@ export function PostListingForm() {
     );
   }
 
+  const categoriesList = categories?.data ?? [];
+
   return (
     <>
-      <div className="bg-secondary/30 border-b border-border/40 py-8 mb-8">
-        <div className="container mx-auto px-4 max-w-3xl">
-          <h1 className="text-3xl font-serif font-bold text-foreground">{t("post.title")}</h1>
+      <div className="bg-gradient-to-b from-primary/5 to-background border-b border-border/40 py-10 mb-6">
+        <div className="container mx-auto px-4 max-w-2xl">
+          <h1 className="text-3xl font-bold text-foreground">
+            {t("post.title")}
+          </h1>
           <p className="text-muted-foreground mt-2">{t("post.subtitle")}</p>
+          <p className="text-xs text-muted-foreground mt-3">
+            {t("post.required_note")}
+          </p>
         </div>
       </div>
 
-      <div className="container mx-auto px-4 max-w-3xl pb-24">
+      <div className="container mx-auto px-4 max-w-2xl pb-24">
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-            <Card className="border-border/50 shadow-sm">
-              <CardHeader>
-                <CardTitle>{t("post.category")}</CardTitle>
+          <form
+            onSubmit={form.handleSubmit(onSubmit)}
+            className="space-y-6"
+            noValidate
+          >
+            {/* ─── Section 1: About ─── */}
+            <Card className="border-border/50 shadow-sm overflow-hidden">
+              <CardHeader className="bg-secondary/40 border-b border-border/30 pb-4">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <span className="w-7 h-7 rounded-full bg-primary text-primary-foreground text-sm flex items-center justify-center font-bold">
+                    ١
+                  </span>
+                  {t("post.section.about")}
+                </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="pt-6 space-y-6">
+                {/* Category grid */}
                 <FormField
                   control={form.control}
                   name="categoryId"
                   render={({ field }) => (
                     <FormItem>
+                      <FormLabel className="text-base font-semibold">
+                        {t("post.category")} <span className="text-rose-500">*</span>
+                      </FormLabel>
                       <FormControl>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <SelectTrigger className="w-full md:w-[300px]">
-                            <SelectValue placeholder={t("post.category.placeholder")} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {categories?.data.map((cat) => (
-                              <SelectItem key={cat.id} value={cat.id}>
-                                {locale === "ar" ? cat.nameAr : cat.nameEn || cat.nameAr}
-                              </SelectItem>
+                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-2">
+                          {categoriesList.map((cat) => {
+                            const icon = getCategoryIcon(
+                              cat.nameAr,
+                              cat.nameEn || undefined,
+                              cat.slug || undefined,
+                            );
+                            const label =
+                              locale === "ar"
+                                ? cat.nameAr
+                                : cat.nameEn || cat.nameAr;
+                            const isSelected = field.value === cat.id;
+                            return (
+                              <button
+                                key={cat.id}
+                                type="button"
+                                onClick={() => field.onChange(cat.id)}
+                                className={cn(
+                                  "flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 p-3 text-center transition-all duration-150 hover:border-primary/60 hover:bg-primary/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                                  isSelected
+                                    ? "border-primary bg-primary/8 shadow-sm"
+                                    : "border-border/50 bg-background",
+                                )}
+                              >
+                                <span className="text-2xl leading-none">
+                                  {icon}
+                                </span>
+                                <span
+                                  className={cn(
+                                    "text-xs font-medium leading-tight",
+                                    isSelected
+                                      ? "text-primary"
+                                      : "text-foreground/80",
+                                  )}
+                                >
+                                  {label}
+                                </span>
+                                {isSelected && (
+                                  <Check className="h-3 w-3 text-primary absolute top-1 end-1 hidden sm:block" />
+                                )}
+                              </button>
+                            );
+                          })}
+                          {categoriesList.length === 0 &&
+                            Array.from({ length: 8 }).map((_, i) => (
+                              <div
+                                key={i}
+                                className="h-20 rounded-xl border border-border/30 bg-secondary/30 animate-pulse"
+                              />
                             ))}
-                          </SelectContent>
-                        </Select>
+                        </div>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-              </CardContent>
-            </Card>
 
-            <Card className="border-border/50 shadow-sm">
-              <CardHeader>
-                <CardTitle>{locale === "ar" ? "تفاصيل الإعلان" : "Ad Details"}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <FormField
-                  control={form.control}
-                  name="titleAr"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t("post.title_ar")}</FormLabel>
-                      <FormControl>
-                        <Input dir="rtl" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="titleEn"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t("post.title_en")}</FormLabel>
-                      <FormControl>
-                        <Input dir="ltr" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="descriptionAr"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t("post.desc_ar")}</FormLabel>
-                      <FormControl>
-                        <Textarea dir="rtl" className="min-h-[120px]" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="descriptionEn"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t("post.desc_en")}</FormLabel>
-                      <FormControl>
-                        <Textarea dir="ltr" className="min-h-[120px]" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/50 shadow-sm">
-              <CardHeader>
-                <CardTitle>
-                  {t("post.price")} &{" "}
-                  {locale === "ar" ? "الموقع" : "Location"}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <FormField
-                  control={form.control}
-                  name="isFree"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                      <div className="space-y-0.5">
-                        <FormLabel className="text-base">{t("post.is_free")}</FormLabel>
-                        <FormDescription>
-                          {locale === "ar"
-                            ? "حدد هذا إذا كنت تقدم العنصر مجاناً"
-                            : "Check this if you are giving the item away for free"}
-                        </FormDescription>
-                      </div>
-                      <FormControl>
-                        <Switch checked={field.value} onCheckedChange={field.onChange} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-
-                {!isFree && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <FormField
-                      control={form.control}
-                      name="priceCents"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>{t("post.price")}</FormLabel>
-                          <FormControl>
-                            <Input type="number" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="currency"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>{t("post.currency")}</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select currency" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="SYP">SYP - الليرة السورية</SelectItem>
-                              <SelectItem value="USD">USD - دولار أمريكي</SelectItem>
-                              <SelectItem value="EUR">EUR - يورو</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                )}
-
-                <FormField
-                  control={form.control}
-                  name="isNegotiable"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-center space-x-3 space-x-reverse gap-3">
-                      <FormControl>
-                        <Switch checked={field.value} onCheckedChange={field.onChange} />
-                      </FormControl>
-                      <FormLabel className="font-normal">{t("post.is_negotiable")}</FormLabel>
-                    </FormItem>
-                  )}
-                />
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-border/40">
+                <div className="border-t border-border/30 pt-6 space-y-5">
+                  {/* Arabic title — required */}
                   <FormField
                     control={form.control}
-                    name="city"
+                    name="titleAr"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{t("post.city")}</FormLabel>
+                        <FormLabel className="font-semibold">
+                          {t("post.title_ar")}{" "}
+                          <span className="text-rose-500">*</span>
+                        </FormLabel>
                         <FormControl>
-                          <Input {...field} />
+                          <Input
+                            dir="rtl"
+                            placeholder="مثال: آيفون 14 برو ماكس بحالة ممتازة"
+                            className={cn(
+                              "transition-colors",
+                              form.formState.errors.titleAr
+                                ? "border-rose-400 focus-visible:ring-rose-300"
+                                : "",
+                            )}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage className="text-rose-500" />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* Arabic description — required */}
+                  <FormField
+                    control={form.control}
+                    name="descriptionAr"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="font-semibold">
+                          {t("post.desc_ar")}{" "}
+                          <span className="text-rose-500">*</span>
+                        </FormLabel>
+                        <FormControl>
+                          <Textarea
+                            dir="rtl"
+                            rows={4}
+                            placeholder="اكتب وصفاً تفصيلياً للعنصر يشمل الحالة والمواصفات وأي معلومات مهمة..."
+                            className={cn(
+                              "resize-none transition-colors",
+                              form.formState.errors.descriptionAr
+                                ? "border-rose-400 focus-visible:ring-rose-300"
+                                : "",
+                            )}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage className="text-rose-500" />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* English title — optional */}
+                  <FormField
+                    control={form.control}
+                    name="titleEn"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-muted-foreground">
+                          {t("post.title_en")}
+                        </FormLabel>
+                        <FormDescription className="text-xs">
+                          {t("post.optional_auto_translate")}
+                        </FormDescription>
+                        <FormControl>
+                          <Input
+                            dir="ltr"
+                            placeholder="e.g. iPhone 14 Pro Max, excellent condition"
+                            {...field}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
+
+                  {/* English description — optional */}
                   <FormField
                     control={form.control}
-                    name="district"
+                    name="descriptionEn"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{t("post.district")}</FormLabel>
+                        <FormLabel className="text-muted-foreground">
+                          {t("post.desc_en")}
+                        </FormLabel>
                         <FormControl>
-                          <Input {...field} />
+                          <Textarea
+                            dir="ltr"
+                            rows={3}
+                            placeholder="Write an English description..."
+                            className="resize-none"
+                            {...field}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -346,83 +523,326 @@ export function PostListingForm() {
               </CardContent>
             </Card>
 
-            <Card className="border-border/50 shadow-sm">
-              <CardHeader>
-                <CardTitle>{t("post.images")}</CardTitle>
-                <CardDescription>
-                  {locale === "ar"
-                    ? "أضف صوراً واضحة لزيادة فرص بيع العنصر"
-                    : "Add clear images to increase your chances of selling"}
-                </CardDescription>
+            {/* ─── Section 2: Price & Location ─── */}
+            <Card className="border-border/50 shadow-sm overflow-hidden">
+              <CardHeader className="bg-secondary/40 border-b border-border/30 pb-4">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <span className="w-7 h-7 rounded-full bg-primary text-primary-foreground text-sm flex items-center justify-center font-bold">
+                    ٢
+                  </span>
+                  {t("post.section.price_location")}
+                </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <ObjectUploader
-                  maxNumberOfFiles={5}
-                  onGetUploadParameters={async (file) => {
-                    const res = await fetch("/api/storage/uploads/request-url", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        name: file.name,
-                        size: file.size,
-                        contentType: file.type,
-                      }),
-                    });
-                    const data = await res.json();
-                    file.meta = { ...file.meta, objectPath: data.objectPath };
-                    return {
-                      method: "PUT",
-                      url: data.uploadURL,
-                      headers: {
-                        "Content-Type": file.type ?? "application/octet-stream",
-                      },
-                    };
+              <CardContent className="pt-6 space-y-5">
+                {/* Free toggle */}
+                <FormField
+                  control={form.control}
+                  name="isFree"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-xl border border-border/50 bg-secondary/20 p-4">
+                      <div>
+                        <FormLabel className="text-base font-medium cursor-pointer">
+                          {t("post.is_free")}
+                        </FormLabel>
+                        <FormDescription className="text-xs mt-0.5">
+                          {locale === "ar"
+                            ? "حدد هذا إذا كنت تقدم العنصر مجاناً"
+                            : "Check this if you are giving the item away for free"}
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+                {!isFree && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Price */}
+                    <FormField
+                      control={form.control}
+                      name="priceCents"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="font-semibold">
+                            {t("post.price")}
+                          </FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              min={0}
+                              placeholder={
+                                locale === "ar" ? "مثال: 50000" : "e.g. 50000"
+                              }
+                              className={cn(
+                                "transition-colors",
+                                form.formState.errors.priceCents
+                                  ? "border-rose-400 focus-visible:ring-rose-300"
+                                  : "",
+                              )}
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormMessage className="text-rose-500" />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Currency toggle */}
+                    <FormField
+                      control={form.control}
+                      name="currency"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="font-semibold">
+                            {t("post.currency")}
+                          </FormLabel>
+                          <FormControl>
+                            <div className="flex rounded-lg border border-border overflow-hidden h-10">
+                              {CURRENCIES.map((c) => {
+                                const isActive = field.value === c.value;
+                                return (
+                                  <button
+                                    key={c.value}
+                                    type="button"
+                                    onClick={() => field.onChange(c.value)}
+                                    className={cn(
+                                      "flex-1 flex flex-col items-center justify-center text-xs font-semibold transition-colors leading-none gap-0.5",
+                                      isActive
+                                        ? "bg-amber-500 text-white"
+                                        : "bg-background text-muted-foreground hover:bg-secondary",
+                                    )}
+                                  >
+                                    <span className="text-sm">{c.label}</span>
+                                    <span className="opacity-75 text-[10px]">
+                                      {c.sublabel}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                )}
+
+                {/* Negotiable */}
+                <FormField
+                  control={form.control}
+                  name="isNegotiable"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center gap-3 rounded-xl border border-border/40 bg-secondary/10 px-4 py-3">
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                      <FormLabel className="font-normal cursor-pointer">
+                        {t("post.is_negotiable")}
+                      </FormLabel>
+                    </FormItem>
+                  )}
+                />
+
+                <div className="border-t border-border/30 pt-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* City */}
+                  <FormField
+                    control={form.control}
+                    name="city"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="font-semibold">
+                          {t("post.city")}{" "}
+                          <span className="text-rose-500">*</span>
+                        </FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          defaultValue={field.value}
+                        >
+                          <FormControl>
+                            <SelectTrigger
+                              className={cn(
+                                "transition-colors",
+                                form.formState.errors.city
+                                  ? "border-rose-400 focus-visible:ring-rose-300"
+                                  : "",
+                              )}
+                            >
+                              <SelectValue
+                                placeholder={t("post.city.placeholder")}
+                              />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {SYRIAN_CITIES.map((c) => (
+                              <SelectItem key={c.ar} value={c.ar}>
+                                {locale === "ar"
+                                  ? c.ar
+                                  : `${c.en} — ${c.ar}`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage className="text-rose-500" />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* District */}
+                  <FormField
+                    control={form.control}
+                    name="district"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-muted-foreground">
+                          {t("post.district")}
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder={
+                              locale === "ar" ? "مثال: المزة" : "e.g. Mezzeh"
+                            }
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* ─── Section 3: Photos ─── */}
+            <Card className="border-border/50 shadow-sm overflow-hidden">
+              <CardHeader className="bg-secondary/40 border-b border-border/30 pb-4">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <span className="w-7 h-7 rounded-full bg-primary text-primary-foreground text-sm flex items-center justify-center font-bold">
+                    ٣
+                  </span>
+                  {t("post.section.photos")}
+                </CardTitle>
+                <CardDescription>{t("post.photos.hint")}</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-6 space-y-4">
+                {/* Counter */}
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    {t("post.photos.counter", {
+                      count: uploadedFiles.length,
+                    })}
+                  </span>
+                  {uploadedFiles.length >= MAX_PHOTOS && (
+                    <span className="text-amber-600 text-xs font-medium">
+                      {t("post.photos.max_reached")}
+                    </span>
+                  )}
+                </div>
+
+                {/* Drop zone */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files) processFiles(e.target.files);
+                    e.target.value = "";
                   }}
-                  onComplete={(result) => {
-                    const newPaths = (result.successful ?? [])
-                      .map(
-                        (f) =>
-                          (f.meta as { objectPath?: string } | undefined)?.objectPath,
-                      )
-                      .filter((p): p is string => typeof p === "string");
-                    if (newPaths.length > 0) {
-                      setImageObjectPaths((prev) => [...prev, ...newPaths]);
-                      toast({
-                        title: locale === "ar" ? "تم رفع الصور" : "Images uploaded",
-                        description:
-                          locale === "ar"
-                            ? `تم رفع ${newPaths.length} صورة.`
-                            : `Successfully uploaded ${newPaths.length} image(s).`,
-                      });
-                    }
+                />
+                <button
+                  type="button"
+                  disabled={isUploading || uploadedFiles.length >= MAX_PHOTOS}
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    if (uploadedFiles.length < MAX_PHOTOS) setIsDragOver(true);
                   }}
+                  onDragLeave={() => setIsDragOver(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragOver(false);
+                    if (e.dataTransfer.files) processFiles(e.dataTransfer.files);
+                  }}
+                  className={cn(
+                    "w-full flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed py-10 px-6 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                    isDragOver
+                      ? "border-primary bg-primary/8 scale-[1.01]"
+                      : uploadedFiles.length >= MAX_PHOTOS
+                        ? "border-border/30 bg-secondary/20 opacity-60 cursor-not-allowed"
+                        : "border-primary/40 bg-primary/3 hover:border-primary hover:bg-primary/7 cursor-pointer",
+                  )}
                 >
-                  {locale === "ar" ? "رفع الصور" : "Upload images"}
-                </ObjectUploader>
-                {imageObjectPaths.length > 0 && (
-                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 pt-2">
-                    {imageObjectPaths.map((imgPath, idx) => (
+                  {isUploading ? (
+                    <>
+                      <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                      <span className="text-sm text-muted-foreground">
+                        {t("post.photos.uploading")}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                        {isDragOver ? (
+                          <Upload className="h-6 w-6 text-primary" />
+                        ) : (
+                          <ImagePlus className="h-6 w-6 text-primary" />
+                        )}
+                      </div>
+                      <div className="text-center">
+                        <p className="text-sm font-medium text-foreground">
+                          {t("post.photos.drag_drop")}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          PNG, JPG, WEBP — 5 صور كحد أقصى
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </button>
+
+                {uploadError && (
+                  <p className="text-xs text-rose-500 text-center">
+                    {uploadError}
+                  </p>
+                )}
+
+                {/* Thumbnails */}
+                {uploadedFiles.length > 0 && (
+                  <div className="flex gap-3 overflow-x-auto pb-2 pt-1 -mx-1 px-1">
+                    {uploadedFiles.map((file, idx) => (
                       <div
-                        key={imgPath}
-                        className="relative group aspect-square rounded-lg overflow-hidden border border-border/50 bg-secondary"
+                        key={file.objectPath}
+                        className="relative flex-shrink-0 w-20 h-20 rounded-xl overflow-hidden border-2 border-primary/30 bg-secondary shadow-sm group"
                       >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={`/api${imgPath}`}
-                          alt={`upload-${idx}`}
+                          src={file.previewUrl}
+                          alt={`photo-${idx + 1}`}
                           className="w-full h-full object-cover"
                         />
                         <button
                           type="button"
-                          onClick={() =>
-                            setImageObjectPaths((prev) =>
-                              prev.filter((p) => p !== imgPath),
-                            )
+                          onClick={() => removeFile(file.objectPath)}
+                          className="absolute top-1 end-1 w-5 h-5 rounded-full bg-background/90 text-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow"
+                          aria-label={
+                            locale === "ar" ? "إزالة الصورة" : "Remove photo"
                           }
-                          className="absolute top-1 right-1 bg-background/90 text-foreground rounded-full w-6 h-6 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                          aria-label="remove"
                         >
-                          ×
+                          <X className="h-3 w-3" />
                         </button>
+                        <div className="absolute bottom-1 start-1 bg-background/75 rounded px-1 text-[9px] font-bold text-foreground">
+                          {idx + 1}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -430,10 +850,12 @@ export function PostListingForm() {
               </CardContent>
             </Card>
 
-            <div className="flex justify-end gap-4">
+            {/* ─── Actions ─── */}
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
+                className="text-muted-foreground"
                 onClick={() => router.push(path("/listings"))}
               >
                 {t("common.cancel")}
@@ -441,10 +863,19 @@ export function PostListingForm() {
               <Button
                 type="submit"
                 size="lg"
-                className="bg-primary hover:bg-primary/90"
-                disabled={createListing.isPending}
+                className="bg-primary hover:bg-primary/90 min-w-[180px] rounded-xl gap-2"
+                disabled={createListing.isPending || isUploading}
               >
-                {createListing.isPending ? t("common.loading") : t("post.submit")}
+                {createListing.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>
+                      {locale === "ar" ? "جاري النشر..." : "Publishing..."}
+                    </span>
+                  </>
+                ) : (
+                  t("post.submit")
+                )}
               </Button>
             </div>
           </form>
