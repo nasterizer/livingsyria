@@ -494,6 +494,9 @@
   .ms-1\.5 {
     margin-inline-start: calc(var(--spacing) * 1.5);
   }
+  .me-2 {
+    margin-inline-end: calc(var(--spacing) * 2);
+  }
   .prose {
     color: var(--tw-prose-body);
     max-width: 65ch;
@@ -1475,6 +1478,9 @@
   }
   .w-\[--cell-size\] {
     width: --cell-size;
+  }
+  .w-\[--radix-popover-trigger-width\] {
+    width: --radix-popover-trigger-width;
   }
   .w-\[1px\] {
     width: 1px;
@@ -2875,6 +2881,9 @@
   }
   .opacity-90 {
     opacity: 90%;
+  }
+  .opacity-100 {
+    opacity: 100%;
   }
   .mix-blend-multiply {
     mix-blend-mode: multiply;

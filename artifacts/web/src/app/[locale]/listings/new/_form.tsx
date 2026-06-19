@@ -26,12 +26,18 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -42,6 +48,8 @@ import {
   Loader2,
   Upload,
   Check,
+  ChevronsUpDown,
+  MapPin,
 } from "lucide-react";
 
 const MAX_PHOTOS = 5;
@@ -111,7 +119,6 @@ function getCategoryIcon(nameAr?: string, nameEn?: string, slug?: string): strin
 const CURRENCIES = [
   { value: CreateListingBodyCurrency.SYP, label: "ل.س", sublabel: "SYP" },
   { value: CreateListingBodyCurrency.USD, label: "$", sublabel: "USD" },
-  { value: CreateListingBodyCurrency.EUR, label: "€", sublabel: "EUR" },
 ];
 
 const formSchema = z.object({
@@ -157,6 +164,7 @@ export function PostListingForm() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [cityOpen, setCityOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: categories } = useListCategories();
@@ -374,7 +382,7 @@ export function PostListingForm() {
                               <button
                                 key={cat.id}
                                 type="button"
-                                onClick={() => field.onChange(cat.id)}
+                                onClick={() => { field.onChange(cat.id); field.onBlur(); }}
                                 className={cn(
                                   "flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 p-3 text-center transition-all duration-150 hover:border-primary/60 hover:bg-primary/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
                                   isSelected
@@ -653,47 +661,99 @@ export function PostListingForm() {
                 />
 
                 <div className="border-t border-border/30 pt-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* City */}
+                  {/* City — searchable combobox */}
                   <FormField
                     control={form.control}
                     name="city"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="font-semibold">
-                          {t("post.city")}{" "}
-                          <span className="text-rose-500">*</span>
-                        </FormLabel>
-                        <Select
-                          onValueChange={field.onChange}
-                          defaultValue={field.value}
-                        >
-                          <FormControl>
-                            <SelectTrigger
-                              className={cn(
-                                "transition-colors",
-                                form.formState.errors.city
-                                  ? "border-rose-400 focus-visible:ring-rose-300"
-                                  : "",
-                              )}
+                    render={({ field }) => {
+                      const selected = SYRIAN_CITIES.find(
+                        (c) => c.ar === field.value,
+                      );
+                      const displayLabel = selected
+                        ? locale === "ar"
+                          ? selected.ar
+                          : `${selected.en} — ${selected.ar}`
+                        : t("post.city.placeholder");
+                      return (
+                        <FormItem>
+                          <FormLabel className="font-semibold">
+                            {t("post.city")}{" "}
+                            <span className="text-rose-500">*</span>
+                          </FormLabel>
+                          <Popover open={cityOpen} onOpenChange={setCityOpen}>
+                            <PopoverTrigger asChild>
+                              <FormControl>
+                                <Button
+                                  variant="outline"
+                                  role="combobox"
+                                  aria-expanded={cityOpen}
+                                  className={cn(
+                                    "w-full justify-between font-normal h-10",
+                                    !field.value && "text-muted-foreground",
+                                    form.formState.errors.city
+                                      ? "border-rose-400"
+                                      : "",
+                                  )}
+                                >
+                                  <span className="flex items-center gap-2">
+                                    <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                    {displayLabel}
+                                  </span>
+                                  <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
+                                </Button>
+                              </FormControl>
+                            </PopoverTrigger>
+                            <PopoverContent
+                              className="w-[--radix-popover-trigger-width] p-0"
+                              align="start"
                             >
-                              <SelectValue
-                                placeholder={t("post.city.placeholder")}
-                              />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {SYRIAN_CITIES.map((c) => (
-                              <SelectItem key={c.ar} value={c.ar}>
-                                {locale === "ar"
-                                  ? c.ar
-                                  : `${c.en} — ${c.ar}`}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage className="text-rose-500" />
-                      </FormItem>
-                    )}
+                              <Command>
+                                <CommandInput
+                                  placeholder={
+                                    locale === "ar"
+                                      ? "ابحث عن مدينة..."
+                                      : "Search city..."
+                                  }
+                                />
+                                <CommandList>
+                                  <CommandEmpty>
+                                    {locale === "ar"
+                                      ? "لا توجد نتائج"
+                                      : "No cities found."}
+                                  </CommandEmpty>
+                                  <CommandGroup>
+                                    {SYRIAN_CITIES.map((c) => (
+                                      <CommandItem
+                                        key={c.ar}
+                                        value={`${c.ar} ${c.en}`}
+                                        onSelect={() => {
+                                          field.onChange(c.ar);
+                                          field.onBlur();
+                                          setCityOpen(false);
+                                        }}
+                                      >
+                                        <Check
+                                          className={cn(
+                                            "me-2 h-4 w-4",
+                                            field.value === c.ar
+                                              ? "opacity-100"
+                                              : "opacity-0",
+                                          )}
+                                        />
+                                        {locale === "ar"
+                                          ? c.ar
+                                          : `${c.en} — ${c.ar}`}
+                                      </CommandItem>
+                                    ))}
+                                  </CommandGroup>
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                          <FormMessage className="text-rose-500" />
+                        </FormItem>
+                      );
+                    }}
                   />
 
                   {/* District */}
