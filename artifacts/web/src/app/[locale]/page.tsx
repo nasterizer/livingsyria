@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { HomeClient } from "./_home";
+import { apiFetch } from "@/lib/api";
+import type { NewsPage, ListingsPage, ListCategories200 } from "@workspace/api-client-react";
 
 export const metadata: Metadata = {
   title: "LivingSyria — ليفينغ سوريا",
@@ -13,10 +15,20 @@ export const metadata: Metadata = {
   },
 };
 
-export default function HomePage() {
+export default async function HomePage() {
+  const [news, listings, categories] = await Promise.allSettled([
+    apiFetch<NewsPage>("/api/news?limit=6"),
+    apiFetch<ListingsPage>("/api/listings?limit=8"),
+    apiFetch<ListCategories200>("/api/categories"),
+  ]);
+
   return (
     <Suspense>
-      <HomeClient />
+      <HomeClient
+        initialNews={news.status === "fulfilled" ? news.value : undefined}
+        initialListings={listings.status === "fulfilled" ? listings.value : undefined}
+        initialCategories={categories.status === "fulfilled" ? categories.value : undefined}
+      />
     </Suspense>
   );
 }

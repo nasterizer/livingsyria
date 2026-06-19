@@ -4,7 +4,12 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useI18n, formatRelative, formatCurrency } from "@/lib/i18n";
-import { useListListings, useListCategories } from "@workspace/api-client-react";
+import {
+  useListListings,
+  useListCategories,
+  type ListingsPage,
+  type ListCategories200,
+} from "@workspace/api-client-react";
 import { SmartImage } from "@/components/SmartImage";
 import { imageUrl } from "@/lib/image";
 import { Button } from "@/components/ui/button";
@@ -17,7 +22,12 @@ function heightFor(i: number) {
   return 200 + ((i * 53) % 160);
 }
 
-export function ListingsClient() {
+interface ListingsClientProps {
+  initialData?: ListingsPage | null;
+  initialCategories?: ListCategories200 | null;
+}
+
+export function ListingsClient({ initialData, initialCategories }: ListingsClientProps) {
   const { t, locale, path } = useI18n();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -45,14 +55,14 @@ export function ListingsClient() {
     return `${path("/listings")}${qs ? `?${qs}` : ""}`;
   }
 
-  const { data, isLoading } = useListListings({
-    page,
-    limit: 12,
-    category: categorySlug,
-    q: qParam || undefined,
-  });
+  const { data, isLoading } = useListListings(
+    { page, limit: 12, category: categorySlug, q: qParam || undefined },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { query: { initialData: initialData ?? undefined } as any },
+  );
 
-  const { data: categories } = useListCategories();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: categories } = useListCategories({ query: { initialData: initialCategories ?? undefined } } as any);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();

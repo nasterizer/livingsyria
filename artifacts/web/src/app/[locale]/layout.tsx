@@ -29,6 +29,13 @@ export const metadata: Metadata = {
 
 export default function LocaleLayout({ children, params }: Props) {
   const locale = (params.locale as Locale) === "en" ? "en" : "ar";
+  const dir = locale === "ar" ? "rtl" : "ltr";
 
-  return <Providers locale={locale}>{children}</Providers>;
+  return (
+    <html lang={locale} dir={dir} suppressHydrationWarning>
+      <body suppressHydrationWarning>
+        <Providers locale={locale}>{children}</Providers>
+      </body>
+    </html>
+  );
 }

@@ -6,6 +6,9 @@ import {
   useListNews,
   useListListings,
   useListCategories,
+  type NewsPage,
+  type ListingsPage,
+  type ListCategories200,
 } from "@workspace/api-client-react";
 import { SmartImage } from "@/components/SmartImage";
 import { imageUrl } from "@/lib/image";
@@ -67,14 +70,29 @@ function EmptyTile({ message }: { message: string }) {
   );
 }
 
-export function HomeClient() {
+interface HomeClientProps {
+  initialNews?: NewsPage;
+  initialListings?: ListingsPage;
+  initialCategories?: ListCategories200;
+}
+
+export function HomeClient({ initialNews, initialListings, initialCategories }: HomeClientProps) {
   const { t, locale, dir, path } = useI18n();
   const isRtl = dir === "rtl";
   const ChevronEnd = isRtl ? ChevronLeft : ChevronRight;
 
-  const { data: newsData, isLoading: isLoadingNews } = useListNews({ limit: 6 });
-  const { data: listingsData, isLoading: isLoadingListings } = useListListings({ limit: 8 });
-  const { data: categoriesData } = useListCategories();
+  const { data: newsData, isLoading: isLoadingNews } = useListNews(
+    { limit: 6 },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { query: { initialData: initialNews } as any },
+  );
+  const { data: listingsData, isLoading: isLoadingListings } = useListListings(
+    { limit: 8 },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { query: { initialData: initialListings } as any },
+  );
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: categoriesData } = useListCategories({ query: { initialData: initialCategories } } as any);
 
   const listingsCountLabel = listingsData?.data?.length
     ? `${listingsData.data.length}+`

@@ -3,14 +3,18 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useI18n, formatRelative } from "@/lib/i18n";
-import { useListNews } from "@workspace/api-client-react";
+import { useListNews, type NewsPage } from "@workspace/api-client-react";
 import { SmartImage } from "@/components/SmartImage";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Sparkles, ArrowRight, ArrowLeft, ExternalLink } from "lucide-react";
 
-export function NewsListClient() {
+interface NewsListClientProps {
+  initialData?: NewsPage | null;
+}
+
+export function NewsListClient({ initialData }: NewsListClientProps) {
   const { t, locale, dir, path } = useI18n();
   const isRtl = dir === "rtl";
   const ArrowIcon = isRtl ? ArrowLeft : ArrowRight;
@@ -18,7 +22,11 @@ export function NewsListClient() {
   const page = parseInt(searchParams.get("page") || "1", 10);
   const tag = searchParams.get("tag") || undefined;
 
-  const { data, isLoading } = useListNews({ page, limit: 12, tag });
+  const { data, isLoading } = useListNews(
+    { page, limit: 12, tag },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { query: { initialData: initialData ?? undefined } as any },
+  );
 
   return (
     <>
