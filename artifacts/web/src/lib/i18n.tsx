@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+"use client";
+
+import React, { createContext, useContext, useState } from "react";
 
 export type Locale = "ar" | "en";
 
@@ -7,6 +9,7 @@ interface I18nContextType {
   setLocale: (locale: Locale) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
   dir: "rtl" | "ltr";
+  path: (href: string) => string;
 }
 
 const translations: Record<Locale, Record<string, string>> = {
@@ -222,18 +225,14 @@ const translations: Record<Locale, Record<string, string>> = {
 
 const I18nContext = createContext<I18nContextType | undefined>(undefined);
 
-export function I18nProvider({ children }: { children: React.ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(() => {
-    const saved = localStorage.getItem("livingSyria_locale");
-    if (saved === "ar" || saved === "en") return saved;
-    return "ar";
-  });
-
-  useEffect(() => {
-    document.documentElement.lang = locale;
-    document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
-    localStorage.setItem("livingSyria_locale", locale);
-  }, [locale]);
+export function I18nProvider({
+  children,
+  locale: initialLocale,
+}: {
+  children: React.ReactNode;
+  locale: Locale;
+}) {
+  const [locale] = useState<Locale>(initialLocale);
 
   const t = (key: string, params?: Record<string, string | number>) => {
     let text = translations[locale][key] ?? key;
@@ -246,11 +245,17 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   };
 
   const setLocale = (newLocale: Locale) => {
-    setLocaleState(newLocale);
+    const currentPath = window.location.pathname;
+    const withoutLocale = currentPath.replace(/^\/(ar|en)/, "") || "/";
+    window.location.href = `/${newLocale}${withoutLocale === "/" && newLocale === currentPath.split("/")[1] ? "" : withoutLocale}`;
   };
 
+  const path = (href: string) => `/${locale}${href}`;
+
   return (
-    <I18nContext.Provider value={{ locale, setLocale, t, dir: locale === "ar" ? "rtl" : "ltr" }}>
+    <I18nContext.Provider
+      value={{ locale, setLocale, t, dir: locale === "ar" ? "rtl" : "ltr", path }}
+    >
       {children}
     </I18nContext.Provider>
   );

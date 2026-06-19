@@ -1,4 +1,7 @@
-import { Link, useLocation } from "wouter";
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@workspace/replit-auth-web";
 import { Button } from "@/components/ui/button";
@@ -36,11 +39,11 @@ function BrandMark() {
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
-  const { t, locale, setLocale } = useI18n();
+  const { t, locale, setLocale, path } = useI18n();
   const { user, isAuthenticated, login, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
-  const [, navigate] = useLocation();
+  const router = useRouter();
 
   const toggleLocale = () => setLocale(locale === "ar" ? "en" : "ar");
 
@@ -48,9 +51,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
     e.preventDefault();
     const q = searchValue.trim();
     if (!q) {
-      navigate("/listings");
+      router.push(path("/listings"));
     } else {
-      navigate(`/listings?q=${encodeURIComponent(q)}`);
+      router.push(`${path("/listings")}?q=${encodeURIComponent(q)}`);
     }
     setMobileMenuOpen(false);
   };
@@ -69,7 +72,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             >
               {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </Button>
-            <Link href="/" className="shrink-0">
+            <Link href={path("/")} className="shrink-0">
               <BrandMark />
             </Link>
           </div>
@@ -135,7 +138,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   </div>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
-                    <Link href="/me/listings" className="gap-2 cursor-pointer">
+                    <Link href={path("/account/listings")} className="gap-2 cursor-pointer">
                       <Store className="h-4 w-4" />
                       {t("nav.my_listings")}
                     </Link>
@@ -167,7 +170,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               className="hidden sm:flex rounded-full bazaar-gradient hover:opacity-90 shadow-lg shadow-emerald-700/20 font-bold px-6 h-11 gap-2 text-primary-foreground border-0"
             >
               <Link
-                href={isAuthenticated ? "/post" : "#"}
+                href={isAuthenticated ? path("/listings/new") : "#"}
                 onClick={(e) => {
                   if (!isAuthenticated) {
                     e.preventDefault();
@@ -200,13 +203,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
               <nav className="grid grid-cols-2 gap-2">
                 <Button asChild variant="outline" className="justify-start gap-2 rounded-2xl h-12">
-                  <Link href="/news" onClick={() => setMobileMenuOpen(false)}>
+                  <Link href={path("/news")} onClick={() => setMobileMenuOpen(false)}>
                     <Newspaper className="h-4 w-4" />
                     {t("nav.news")}
                   </Link>
                 </Button>
                 <Button asChild variant="outline" className="justify-start gap-2 rounded-2xl h-12">
-                  <Link href="/listings" onClick={() => setMobileMenuOpen(false)}>
+                  <Link href={path("/listings")} onClick={() => setMobileMenuOpen(false)}>
                     <Store className="h-4 w-4" />
                     {t("nav.listings")}
                   </Link>
@@ -218,7 +221,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 className="w-full justify-center gap-2 rounded-full h-12 bazaar-gradient text-primary-foreground border-0 shadow-md"
               >
                 <Link
-                  href={isAuthenticated ? "/post" : "#"}
+                  href={isAuthenticated ? path("/listings/new") : "#"}
                   onClick={(e) => {
                     setMobileMenuOpen(false);
                     if (!isAuthenticated) {
@@ -246,7 +249,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 {isAuthenticated ? (
                   <div className="flex items-center gap-3">
                     <Link
-                      href="/me/listings"
+                      href={path("/account/listings")}
                       className="text-sm font-medium text-foreground flex items-center gap-1.5"
                       onClick={() => setMobileMenuOpen(false)}
                     >
@@ -314,17 +317,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <h4 className="text-white font-bold text-lg mb-4">{t("footer.product")}</h4>
               <ul className="space-y-3 text-sm">
                 <li>
-                  <Link href="/listings" className="hover:text-white transition-colors">
+                  <Link href={path("/listings")} className="hover:text-white transition-colors">
                     {t("nav.listings")}
                   </Link>
                 </li>
                 <li>
-                  <Link href="/news" className="hover:text-white transition-colors">
+                  <Link href={path("/news")} className="hover:text-white transition-colors">
                     {t("nav.news")}
                   </Link>
                 </li>
                 <li>
-                  <Link href="/post" className="hover:text-white transition-colors">
+                  <Link href={path("/listings/new")} className="hover:text-white transition-colors">
                     {t("nav.post")}
                   </Link>
                 </li>
@@ -334,34 +337,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <div>
               <h4 className="text-white font-bold text-lg mb-4">{t("footer.community")}</h4>
               <ul className="space-y-3 text-sm">
-                <li>
-                  <span className="hover:text-white transition-colors cursor-default">
-                    {t("footer.about")}
-                  </span>
-                </li>
-                <li>
-                  <span className="hover:text-white transition-colors cursor-default">
-                    {t("footer.contact")}
-                  </span>
-                </li>
-                <li>
-                  <span className="hover:text-white transition-colors cursor-default">
-                    {t("footer.privacy")}
-                  </span>
-                </li>
-                <li>
-                  <span className="hover:text-white transition-colors cursor-default">
-                    {t("footer.terms")}
-                  </span>
-                </li>
+                <li><span className="hover:text-white transition-colors cursor-default">{t("footer.about")}</span></li>
+                <li><span className="hover:text-white transition-colors cursor-default">{t("footer.contact")}</span></li>
+                <li><span className="hover:text-white transition-colors cursor-default">{t("footer.privacy")}</span></li>
+                <li><span className="hover:text-white transition-colors cursor-default">{t("footer.terms")}</span></li>
               </ul>
             </div>
           </div>
 
           <div className="border-t border-emerald-900/50 pt-8 flex flex-col md:flex-row items-center justify-between text-xs text-emerald-100/50 gap-3">
-            <p>
-              © {new Date().getFullYear()} LivingSyria. {t("footer.rights")}.
-            </p>
+            <p>© {new Date().getFullYear()} LivingSyria. {t("footer.rights")}.</p>
             <span>{t("footer.made_with")}</span>
           </div>
         </div>
