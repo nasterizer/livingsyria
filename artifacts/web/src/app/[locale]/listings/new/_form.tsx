@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import {
@@ -52,24 +52,7 @@ import {
   MapPin,
 } from "lucide-react";
 
-const MAX_PHOTOS = 5;
-
-const SYRIAN_CITIES = [
-  { ar: "دمشق", en: "Damascus" },
-  { ar: "حلب", en: "Aleppo" },
-  { ar: "حمص", en: "Homs" },
-  { ar: "حماة", en: "Hama" },
-  { ar: "اللاذقية", en: "Latakia" },
-  { ar: "طرطوس", en: "Tartus" },
-  { ar: "دير الزور", en: "Deir ez-Zor" },
-  { ar: "الرقة", en: "Raqqa" },
-  { ar: "درعا", en: "Daraa" },
-  { ar: "السويداء", en: "As-Suwayda" },
-  { ar: "إدلب", en: "Idlib" },
-  { ar: "الحسكة", en: "Al-Hasakah" },
-  { ar: "القنيطرة", en: "Quneitra" },
-  { ar: "ريف دمشق", en: "Rural Damascus" },
-];
+// MAX_PHOTOS and SYRIAN_CITIES are now loaded from DB settings via /api/settings/public
 
 const CATEGORY_ICONS: Record<string, string> = {
   electronics: "📱",
@@ -167,6 +150,47 @@ export function PostListingForm() {
   const [cityOpen, setCityOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ─── Cities + max photos loaded from DB settings ──────────────────────────
+  const [cities, setCities] = useState<Array<{ ar: string; en: string }>>([
+    { ar: "دمشق", en: "Damascus" }, { ar: "حلب", en: "Aleppo" },
+    { ar: "حمص", en: "Homs" }, { ar: "حماة", en: "Hama" },
+    { ar: "اللاذقية", en: "Latakia" }, { ar: "طرطوس", en: "Tartus" },
+    { ar: "دير الزور", en: "Deir ez-Zor" }, { ar: "الرقة", en: "Raqqa" },
+    { ar: "درعا", en: "Daraa" }, { ar: "السويداء", en: "As-Suwayda" },
+    { ar: "إدلب", en: "Idlib" }, { ar: "الحسكة", en: "Al-Hasakah" },
+    { ar: "القنيطرة", en: "Quneitra" }, { ar: "ريف دمشق", en: "Rural Damascus" },
+  ]);
+  const [maxPhotos, setMaxPhotos] = useState(5);
+
+  // ─── Draft auto-save ──────────────────────────────────────────────────────
+  const [draftBanner, setDraftBanner] = useState<{
+    formData: Partial<FormValues>;
+  } | null>(null);
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    fetch("/api/settings/public")
+      .then((r) => r.json())
+      .then((json: { data?: { cities?: Array<{ ar: string; en: string }>; maxImages?: number } }) => {
+        if (json.data?.cities?.length) setCities(json.data.cities);
+        if (typeof json.data?.maxImages === "number") setMaxPhotos(json.data.maxImages);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    fetch("/api/listings/drafts/me")
+      .then((r) => r.json())
+      .then((json: { data?: { formData?: Partial<FormValues> } | null }) => {
+        const fd = json.data?.formData;
+        if (fd && typeof fd === "object" && Object.keys(fd).length > 0) {
+          setDraftBanner({ formData: fd });
+        }
+      })
+      .catch(() => {});
+  }, [isAuthenticated]);
+
   const { data: categories } = useListCategories();
   const createListing = useCreateListing();
 
@@ -190,12 +214,34 @@ export function PostListingForm() {
   const isFree = form.watch("isFree");
   const selectedCategory = form.watch("categoryId");
 
+  // ─── Draft debounced-save subscription (after form is initialized) ─────────
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const subscription = form.watch((values) => {
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+      draftTimerRef.current = setTimeout(() => {
+        fetch("/api/listings/drafts/me", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            formData: values,
+            imageObjectPaths: uploadedFiles.map((f) => f.objectPath),
+          }),
+        }).catch(() => {});
+      }, 2000);
+    });
+    return () => {
+      subscription.unsubscribe();
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    };
+  }, [form, isAuthenticated, uploadedFiles]);
+
   const processFiles = useCallback(
     async (files: FileList | File[]) => {
       const fileArray = Array.from(files).filter((f) =>
         f.type.startsWith("image/"),
       );
-      const remaining = MAX_PHOTOS - uploadedFiles.length;
+      const remaining = maxPhotos - uploadedFiles.length;
       if (remaining <= 0) {
         setUploadError(t("post.photos.max_reached"));
         return;
@@ -273,6 +319,7 @@ export function PostListingForm() {
       },
       {
         onSuccess: (res) => {
+          fetch("/api/listings/drafts/me", { method: "DELETE" }).catch(() => {});
           toast({
             title: t("post.success"),
             description:
@@ -337,6 +384,48 @@ export function PostListingForm() {
           </p>
         </div>
       </div>
+
+      {draftBanner && (
+        <div className="container mx-auto px-4 max-w-2xl pt-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3">
+            <p className="text-sm">
+              <span className="font-semibold">
+                {locale === "ar" ? "مسودة محفوظة" : "Saved draft"}
+              </span>
+              {" — "}
+              {locale === "ar"
+                ? "هل تريد استعادة البيانات المحفوظة؟"
+                : "Would you like to restore your saved draft?"}
+            </p>
+            <div className="flex gap-2 shrink-0">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-100"
+                onClick={() => {
+                  form.reset({ ...form.getValues(), ...draftBanner.formData });
+                  setDraftBanner(null);
+                }}
+              >
+                {locale === "ar" ? "استعادة" : "Restore"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-xs text-amber-600 hover:bg-amber-100"
+                onClick={() => {
+                  fetch("/api/listings/drafts/me", { method: "DELETE" }).catch(
+                    () => {},
+                  );
+                  setDraftBanner(null);
+                }}
+              >
+                {locale === "ar" ? "تجاهل" : "Dismiss"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="container mx-auto px-4 max-w-2xl pb-24">
         <Form {...form}>
@@ -666,7 +755,7 @@ export function PostListingForm() {
                     control={form.control}
                     name="city"
                     render={({ field }) => {
-                      const selected = SYRIAN_CITIES.find(
+                      const selected = cities.find(
                         (c) => c.ar === field.value,
                       );
                       const displayLabel = selected
@@ -722,7 +811,7 @@ export function PostListingForm() {
                                       : "No cities found."}
                                   </CommandEmpty>
                                   <CommandGroup>
-                                    {SYRIAN_CITIES.map((c) => (
+                                    {cities.map((c) => (
                                       <CommandItem
                                         key={c.ar}
                                         value={`${c.ar} ${c.en}`}
@@ -800,7 +889,7 @@ export function PostListingForm() {
                       count: uploadedFiles.length,
                     })}
                   </span>
-                  {uploadedFiles.length >= MAX_PHOTOS && (
+                  {uploadedFiles.length >= maxPhotos && (
                     <span className="text-amber-600 text-xs font-medium">
                       {t("post.photos.max_reached")}
                     </span>
@@ -821,11 +910,11 @@ export function PostListingForm() {
                 />
                 <button
                   type="button"
-                  disabled={isUploading || uploadedFiles.length >= MAX_PHOTOS}
+                  disabled={isUploading || uploadedFiles.length >= maxPhotos}
                   onClick={() => fileInputRef.current?.click()}
                   onDragOver={(e) => {
                     e.preventDefault();
-                    if (uploadedFiles.length < MAX_PHOTOS) setIsDragOver(true);
+                    if (uploadedFiles.length < maxPhotos) setIsDragOver(true);
                   }}
                   onDragLeave={() => setIsDragOver(false)}
                   onDrop={(e) => {
@@ -837,7 +926,7 @@ export function PostListingForm() {
                     "w-full flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed py-10 px-6 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
                     isDragOver
                       ? "border-primary bg-primary/8 scale-[1.01]"
-                      : uploadedFiles.length >= MAX_PHOTOS
+                      : uploadedFiles.length >= maxPhotos
                         ? "border-border/30 bg-secondary/20 opacity-60 cursor-not-allowed"
                         : "border-primary/40 bg-primary/3 hover:border-primary hover:bg-primary/7 cursor-pointer",
                   )}
@@ -863,7 +952,7 @@ export function PostListingForm() {
                           {t("post.photos.drag_drop")}
                         </p>
                         <p className="text-xs text-muted-foreground mt-1">
-                          PNG, JPG, WEBP — 5 صور كحد أقصى
+                          PNG, JPG, WEBP — {maxPhotos} صور كحد أقصى
                         </p>
                       </div>
                     </>

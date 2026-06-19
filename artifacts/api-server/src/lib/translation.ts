@@ -2,6 +2,7 @@ import { ai } from "@workspace/integrations-gemini-ai";
 import { db, listingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { logger } from "./logger";
+import { getSetting } from "./settings";
 
 async function translateText(text: string): Promise<string> {
   const response = await ai.models.generateContent({
@@ -22,6 +23,12 @@ async function translateText(text: string): Promise<string> {
 }
 
 export async function autoTranslateListing(listingId: string): Promise<void> {
+  const enabled = await getSetting<boolean>("translation.enabled", true);
+  if (!enabled) {
+    logger.info({ listingId }, "Auto-translation disabled — skipping");
+    return;
+  }
+
   const [row] = await db
     .select()
     .from(listingsTable)
@@ -52,6 +59,9 @@ export async function autoTranslateListing(listingId: string): Promise<void> {
       .update(listingsTable)
       .set(updates)
       .where(eq(listingsTable.id, listingId));
-    logger.info({ listingId, fields: Object.keys(updates) }, "Translation complete");
+    logger.info(
+      { listingId, fields: Object.keys(updates) },
+      "Translation complete",
+    );
   }
 }

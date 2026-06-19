@@ -4,6 +4,7 @@ import { db, newsArticlesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { makeSlug } from "./slug";
 import { logger } from "./logger";
+import { getSetting } from "./settings";
 
 const parser = new Parser({
   timeout: 15000,
@@ -15,12 +16,6 @@ export interface FeedSource {
   url: string;
   language: "ar" | "en";
 }
-
-export const FEEDS: FeedSource[] = [
-  { name: "BBC Arabic", url: "https://feeds.bbci.co.uk/arabic/rss.xml", language: "ar" },
-  { name: "Al Jazeera", url: "https://www.aljazeera.net/aljazeerarss/a7c186be-1baa-4bd4-9d80-a84db769f779/73d0e1b4-532f-45ef-b135-bfdff8b8cab9", language: "ar" },
-  { name: "SANA", url: "https://sana.sy/feed/", language: "ar" },
-];
 
 interface AiNewsResult {
   titleAr: string;
@@ -70,11 +65,29 @@ Respond with strict JSON only, no markdown, no commentary:
   }
 }
 
-export async function ingestFeeds(): Promise<{ inserted: number; skipped: number }> {
+export async function ingestFeeds(): Promise<{
+  inserted: number;
+  skipped: number;
+}> {
+  // ─── Read configurable settings from DB ────────────────────────────────────
+  const enabled = await getSetting<boolean>("news.enabled", true);
+  if (!enabled) {
+    logger.info("News ingestion is disabled via platform settings — skipping");
+    return { inserted: 0, skipped: 0 };
+  }
+
+  const feeds = await getSetting<FeedSource[]>("news.feeds", []);
+  const maxItems = await getSetting<number>("news.max_items_per_feed", 5);
+
+  if (feeds.length === 0) {
+    logger.warn("No news feeds configured in platform settings");
+    return { inserted: 0, skipped: 0 };
+  }
+
   let inserted = 0;
   let skipped = 0;
 
-  for (const feed of FEEDS) {
+  for (const feed of feeds) {
     let parsed;
     try {
       parsed = await parser.parseURL(feed.url);
@@ -83,14 +96,14 @@ export async function ingestFeeds(): Promise<{ inserted: number; skipped: number
       continue;
     }
 
-    const items = (parsed.items ?? []).slice(0, 5);
+    const items = (parsed.items ?? []).slice(0, maxItems);
     for (const item of items) {
       const sourceUrl = item.link;
       if (!sourceUrl) {
         skipped++;
         continue;
       }
-      // dedupe by sourceUrl
+
       const existing = await db
         .select({ id: newsArticlesTable.id })
         .from(newsArticlesTable)
@@ -107,16 +120,29 @@ export async function ingestFeeds(): Promise<{ inserted: number; skipped: number
         (item.content as string) ||
         sourceTitle;
 
-      const ai_result = await summarizeWithGemini(sourceTitle, sourceContent, feed.language);
-      // fallback: store raw if AI failed
-      const titleAr = ai_result?.titleAr ?? (feed.language === "ar" ? sourceTitle : sourceTitle);
-      const titleEn = ai_result?.titleEn ?? (feed.language === "en" ? sourceTitle : null);
-      const summaryAr = ai_result?.summaryAr ?? (feed.language === "ar" ? sourceContent.slice(0, 280) : null);
-      const summaryEn = ai_result?.summaryEn ?? (feed.language === "en" ? sourceContent.slice(0, 280) : null);
+      const ai_result = await summarizeWithGemini(
+        sourceTitle,
+        sourceContent,
+        feed.language,
+      );
+      const titleAr =
+        ai_result?.titleAr ?? (feed.language === "ar" ? sourceTitle : sourceTitle);
+      const titleEn =
+        ai_result?.titleEn ?? (feed.language === "en" ? sourceTitle : null);
+      const summaryAr =
+        ai_result?.summaryAr ??
+        (feed.language === "ar" ? sourceContent.slice(0, 280) : null);
+      const summaryEn =
+        ai_result?.summaryEn ??
+        (feed.language === "en" ? sourceContent.slice(0, 280) : null);
 
       const coverImageUrl =
         (item.enclosure as { url?: string } | undefined)?.url ??
-        ((item as Record<string, unknown>)["media:content"] as { $?: { url?: string } } | undefined)?.$?.url ??
+        (
+          (item as Record<string, unknown>)["media:content"] as
+            | { $?: { url?: string } }
+            | undefined
+        )?.$?.url ??
         null;
 
       try {

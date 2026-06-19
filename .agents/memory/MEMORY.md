@@ -1,0 +1,4 @@
+- [Admin auth pattern](admin-auth.md) — REPL_OWNER_ID + ADMIN_USER_IDS checked server-side in Next.js page, not via API round-trip.
+- [Public settings endpoint](public-settings.md) — GET /api/settings/public (no auth) in admin.ts returns cities + maxImages from DB; used by listing form.
+- [Form hook ordering](form-hook-ordering.md) — form.watch subscription useEffect must be placed AFTER const form = useForm(); temporal dead zone causes runtime errors if placed before.
+- [Express route prefix](express-route-prefix.md) — all routes go through /api prefix (app.use("/api", authMiddleware, router)); curl tests must use localhost:8080/api/... not localhost:8080/...

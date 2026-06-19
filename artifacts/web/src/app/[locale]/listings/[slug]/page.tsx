@@ -5,12 +5,15 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { MapPin } from "lucide-react";
 import { ListingGallery, ListingActions } from "./_gallery";
+import { ContactSellerForm } from "./_contact-form";
+import { getServerUser } from "@/lib/server-auth";
 import { imageUrl } from "@/lib/image";
 
 type Locale = "ar" | "en";
 
 type Listing = {
   id: string;
+  userId: string;
   titleAr: string;
   titleEn?: string | null;
   descriptionAr?: string | null;
@@ -83,7 +86,10 @@ export default async function ListingDetailPage({
   params: { locale: string; slug: string };
 }) {
   const locale = (params.locale as Locale) === "en" ? "en" : "ar";
-  const listing = await getListing(params.slug);
+  const [listing, serverUser] = await Promise.all([
+    getListing(params.slug),
+    getServerUser(),
+  ]);
   const listingsHref = `/${locale}/listings`;
 
   if (!listing) {
@@ -209,6 +215,18 @@ export default async function ListingDetailPage({
                   descriptionAr={listing.descriptionAr}
                   descriptionEn={listing.descriptionEn}
                   createdYear={new Date(listing.createdAt).getFullYear()}
+                />
+              </div>
+
+              <div className="bg-card rounded-2xl border border-border/60 p-6 shadow-sm">
+                <h3 className="font-serif text-base font-bold mb-4 text-foreground">
+                  {locale === "ar" ? "تواصل مع المعلن" : "Contact seller"}
+                </h3>
+                <ContactSellerForm
+                  listingId={listing.id}
+                  listingOwnerId={listing.userId}
+                  currentUserId={serverUser?.id ?? null}
+                  listingSlug={listing.slug}
                 />
               </div>
             </div>

@@ -2,6 +2,7 @@ import { ai } from "@workspace/integrations-gemini-ai";
 import { db, listingsTable } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
 import { logger } from "./logger";
+import { getSetting } from "./settings";
 
 interface ModerationResult {
   safe: boolean;
@@ -14,15 +15,30 @@ export async function moderateListing(
   titleAr: string,
   descriptionAr: string,
 ): Promise<void> {
-  const prompt = `You are a content moderator for a Syrian classifieds platform. Review this listing and decide if it is safe and appropriate. Flag any content that is: spam, illegal goods, weapons, adult content, hate speech, or political propaganda.
+  // ─── Check if moderation is enabled ────────────────────────────────────────
+  const enabled = await getSetting<boolean>("moderation.enabled", true);
+  if (!enabled) {
+    logger.info({ listingId }, "AI moderation disabled — leaving PENDING_REVIEW");
+    return;
+  }
 
-Listing title (Arabic): ${titleAr}
-Listing description (Arabic): ${descriptionAr}
+  // ─── Read configurable thresholds and prompt ────────────────────────────────
+  const autoApproveThreshold = await getSetting<number>(
+    "moderation.auto_approve_threshold",
+    0.8,
+  );
+  const autoRejectThreshold = await getSetting<number>(
+    "moderation.auto_reject_threshold",
+    0.3,
+  );
+  const promptTemplate = await getSetting<string>(
+    "moderation.prompt",
+    "You are a content moderator for a Syrian classifieds platform.\n\nListing title (Arabic): {titleAr}\nListing description (Arabic): {descriptionAr}\n\nRespond ONLY with valid JSON:\n{\"safe\": boolean, \"score\": number, \"reason\": \"optional short string\"}",
+  );
 
-Respond ONLY with valid JSON (no markdown fences):
-{"safe": boolean, "score": number, "reason": "optional short string"}
-
-score = confidence the content is safe (1.0 = definitely safe, 0.0 = definitely unsafe).`;
+  const prompt = promptTemplate
+    .replace("{titleAr}", titleAr)
+    .replace("{descriptionAr}", descriptionAr);
 
   let result: ModerationResult;
   try {
@@ -38,13 +54,14 @@ score = confidence the content is safe (1.0 = definitely safe, 0.0 = definitely 
     return;
   }
 
-  const moderationScore = typeof result.score === "number" ? result.score : 0.5;
+  const moderationScore =
+    typeof result.score === "number" ? result.score : 0.5;
   const moderationReason = result.reason ?? null;
 
   let newStatus: string;
-  if (result.safe && moderationScore >= 0.8) {
+  if (result.safe && moderationScore >= autoApproveThreshold) {
     newStatus = "ACTIVE";
-  } else if (!result.safe && moderationScore <= 0.3) {
+  } else if (!result.safe && moderationScore <= autoRejectThreshold) {
     newStatus = "REJECTED";
   } else {
     newStatus = "PENDING_REVIEW";

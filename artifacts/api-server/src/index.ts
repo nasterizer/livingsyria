@@ -1,13 +1,12 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { ingestFeeds } from "./lib/newsIngestion";
+import { ensureDefaults, getSetting } from "./lib/settings";
 
 const rawPort = process.env["PORT"];
 
 if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
+  throw new Error("PORT environment variable is required but was not provided.");
 }
 
 const port = Number(rawPort);
@@ -24,12 +23,40 @@ app.listen(port, (err) => {
 
   logger.info({ port }, "Server listening");
 
-  const ONE_HOUR_MS = 60 * 60 * 1000;
-
-  setTimeout(() => {
-    ingestFeeds().catch((e) => logger.error({ err: e }, "Initial news ingestion failed"));
-    setInterval(() => {
-      ingestFeeds().catch((e) => logger.error({ err: e }, "Hourly news ingestion failed"));
-    }, ONE_HOUR_MS);
-  }, 5_000);
+  // Seed platform settings defaults, then start the news ingestion scheduler.
+  // Each iteration re-reads the interval from the DB so changes take effect
+  // on the next scheduled run without requiring a server restart.
+  ensureDefaults()
+    .then(() => scheduleNewsIngestion())
+    .catch((e) =>
+      logger.error({ err: e }, "Failed to initialise platform settings"),
+    );
 });
+
+async function scheduleNewsIngestion(): Promise<void> {
+  // Run once immediately (with a small startup delay)
+  await new Promise((r) => setTimeout(r, 5_000));
+
+  await ingestFeeds().catch((e) =>
+    logger.error({ err: e }, "Initial news ingestion failed"),
+  );
+
+  // Then reschedule indefinitely, re-reading the interval from DB each cycle
+  async function loop(): Promise<void> {
+    const intervalMinutes = await getSetting<number>(
+      "news.cron_interval_minutes",
+      60,
+    );
+    const intervalMs = Math.max(1, intervalMinutes) * 60 * 1_000;
+
+    await new Promise((r) => setTimeout(r, intervalMs));
+
+    await ingestFeeds().catch((e) =>
+      logger.error({ err: e }, "Scheduled news ingestion failed"),
+    );
+
+    void loop();
+  }
+
+  void loop();
+}
