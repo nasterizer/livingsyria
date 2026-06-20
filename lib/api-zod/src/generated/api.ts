@@ -336,6 +336,8 @@ export const listNewsQueryLimitMax = 50;
 
 export const ListNewsQueryParams = zod.object({
   tag: zod.coerce.string().optional(),
+  search: zod.coerce.string().optional(),
+  source: zod.coerce.string().optional(),
   page: zod.coerce.number().min(1).default(listNewsQueryPageDefault),
   limit: zod.coerce
     .number()

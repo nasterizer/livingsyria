@@ -1,32 +1,100 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n, formatRelative } from "@/lib/i18n";
-import { useListNews, type NewsPage } from "@workspace/api-client-react";
+import { useListNews, useListNewsSources, type NewsPage } from "@workspace/api-client-react";
 import { SmartImage } from "@/components/SmartImage";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Sparkles, ArrowRight, ArrowLeft, ExternalLink } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Sparkles, ArrowRight, ArrowLeft, ExternalLink, Search, X } from "lucide-react";
 
 interface NewsListClientProps {
   initialData?: NewsPage | null;
 }
 
+const ALL_SOURCES = "__all__";
+
 export function NewsListClient({ initialData }: NewsListClientProps) {
   const { t, locale, dir, path } = useI18n();
   const isRtl = dir === "rtl";
   const ArrowIcon = isRtl ? ArrowLeft : ArrowRight;
+
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
+
   const page = parseInt(searchParams.get("page") || "1", 10);
   const tag = searchParams.get("tag") || undefined;
+  const sourceParam = searchParams.get("source") || "";
+  const searchParam = searchParams.get("search") || "";
+
+  const [searchInput, setSearchInput] = useState(searchParam);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const updateParams = useCallback(
+    (updates: Record<string, string | null>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      for (const [key, value] of Object.entries(updates)) {
+        if (value === null || value === "") {
+          params.delete(key);
+        } else {
+          params.set(key, value);
+        }
+      }
+      params.delete("page");
+      const qs = params.toString();
+      router.push(qs ? `${pathname}?${qs}` : pathname);
+    },
+    [searchParams, router, pathname],
+  );
+
+  const handleSearchChange = (value: string) => {
+    setSearchInput(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      updateParams({ search: value || null });
+    }, 350);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  const hasFilters = !!searchParam || !!sourceParam;
 
   const { data, isLoading } = useListNews(
-    { page, limit: 12, tag },
+    {
+      page,
+      limit: 12,
+      tag,
+      search: searchParam || undefined,
+      source: sourceParam || undefined,
+    },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { query: { initialData: initialData ?? undefined } as any },
+    { query: { initialData: !searchParam && !sourceParam ? (initialData ?? undefined) : undefined } as any },
   );
+
+  const { data: sourcesData } = useListNewsSources();
+  const sources = sourcesData?.data ?? [];
+
+  const buildPageUrl = (p: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("page", String(p));
+    return `${pathname}?${params.toString()}`;
+  };
 
   return (
     <>
@@ -54,7 +122,68 @@ export function NewsListClient({ initialData }: NewsListClientProps) {
         </div>
       </section>
 
-      <div className="container mx-auto px-4 py-10 max-w-3xl">
+      <div className="container mx-auto px-4 py-6 max-w-3xl">
+        <div className="flex flex-col sm:flex-row gap-3 mb-8">
+          <div className="relative flex-1">
+            <Search
+              className="absolute top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none"
+              style={{ [isRtl ? "right" : "left"]: "0.75rem" }}
+            />
+            <Input
+              value={searchInput}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              placeholder={t("news.search_placeholder")}
+              className={`rounded-full bg-card ${isRtl ? "pr-9 pl-4" : "pl-9 pr-4"}`}
+              dir={dir}
+            />
+            {searchInput && (
+              <button
+                onClick={() => handleSearchChange("")}
+                className="absolute top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                style={{ [isRtl ? "left" : "right"]: "0.75rem" }}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {sources.length > 0 && (
+            <Select
+              value={sourceParam || ALL_SOURCES}
+              onValueChange={(val) =>
+                updateParams({ source: val === ALL_SOURCES ? null : val })
+              }
+            >
+              <SelectTrigger className="rounded-full bg-card w-full sm:w-48">
+                <SelectValue placeholder={t("news.all_sources")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_SOURCES}>{t("news.all_sources")}</SelectItem>
+                {sources.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          {hasFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="rounded-full text-muted-foreground hover:text-foreground self-center"
+              onClick={() => {
+                setSearchInput("");
+                updateParams({ search: null, source: null });
+              }}
+            >
+              <X className="h-3.5 w-3.5 me-1" />
+              {t("news.clear_filters")}
+            </Button>
+          )}
+        </div>
+
         {isLoading ? (
           <div className="space-y-6">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -67,7 +196,24 @@ export function NewsListClient({ initialData }: NewsListClientProps) {
           </div>
         ) : !data?.data || data.data.length === 0 ? (
           <div className="rounded-2xl border-2 border-dashed border-border/70 bg-card/50 py-20 text-center text-muted-foreground">
-            {t("news.empty")}
+            {hasFilters ? (
+              <div className="flex flex-col items-center gap-3">
+                <p>{t("news.no_results")}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full"
+                  onClick={() => {
+                    setSearchInput("");
+                    updateParams({ search: null, source: null });
+                  }}
+                >
+                  {t("news.clear_filters")}
+                </Button>
+              </div>
+            ) : (
+              t("news.empty")
+            )}
           </div>
         ) : (
           <div className="space-y-6">
@@ -168,9 +314,7 @@ export function NewsListClient({ initialData }: NewsListClientProps) {
               className="rounded-full"
             >
               {page > 1 ? (
-                <Link href={`${path("/news")}?page=${page - 1}${tag ? `&tag=${tag}` : ""}`}>
-                  {t("common.previous")}
-                </Link>
+                <Link href={buildPageUrl(page - 1)}>{t("common.previous")}</Link>
               ) : (
                 <span>{t("common.previous")}</span>
               )}
@@ -185,9 +329,7 @@ export function NewsListClient({ initialData }: NewsListClientProps) {
               className="rounded-full"
             >
               {page < data.meta.pages ? (
-                <Link href={`${path("/news")}?page=${page + 1}${tag ? `&tag=${tag}` : ""}`}>
-                  {t("common.next")}
-                </Link>
+                <Link href={buildPageUrl(page + 1)}>{t("common.next")}</Link>
               ) : (
                 <span>{t("common.next")}</span>
               )}

@@ -1,9 +1,19 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db, newsArticlesTable } from "@workspace/db";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { ListNewsQueryParams } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+
+router.get("/news/sources", async (_req: Request, res: Response) => {
+  const rows = await db
+    .selectDistinct({ sourceName: newsArticlesTable.sourceName })
+    .from(newsArticlesTable)
+    .where(eq(newsArticlesTable.status, "PUBLISHED"))
+    .orderBy(newsArticlesTable.sourceName);
+
+  res.json({ data: rows.map((r) => r.sourceName) });
+});
 
 router.get("/news", async (req: Request, res: Response) => {
   const parsed = ListNewsQueryParams.safeParse(req.query);
@@ -11,11 +21,23 @@ router.get("/news", async (req: Request, res: Response) => {
     res.status(400).json({ error: "Invalid query parameters" });
     return;
   }
-  const { tag, page = 1, limit = 12 } = parsed.data;
+  const { tag, search, source, page = 1, limit = 12 } = parsed.data;
 
   const conditions = [eq(newsArticlesTable.status, "PUBLISHED")];
   if (tag) {
     conditions.push(sql`${newsArticlesTable.tags} ? ${tag}`);
+  }
+  if (search) {
+    const pattern = `%${search}%`;
+    conditions.push(
+      or(
+        ilike(newsArticlesTable.titleAr, pattern),
+        ilike(newsArticlesTable.titleEn, pattern),
+      )!,
+    );
+  }
+  if (source) {
+    conditions.push(eq(newsArticlesTable.sourceName, source));
   }
   const where = and(...conditions);
 

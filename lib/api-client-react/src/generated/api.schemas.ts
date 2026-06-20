@@ -244,6 +244,8 @@ export type GetListing200 = {
 
 export type ListNewsParams = {
   tag?: string;
+  search?: string;
+  source?: string;
   /**
    * @minimum 1
    */
