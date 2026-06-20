@@ -165,11 +165,28 @@ router.put("/admin/settings/:key", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
 
   const key = String(req.params.key);
-  const { value } = req.body as { value: unknown };
+  const { value, expectedUpdatedAt } = req.body as {
+    value: unknown;
+    expectedUpdatedAt?: string;
+  };
 
   if (value === undefined) {
     res.status(400).json({ error: "value is required in request body" });
     return;
+  }
+
+  // Optimistic locking: if caller provided expectedUpdatedAt, verify it matches
+  if (expectedUpdatedAt !== undefined) {
+    const allSettings = await getAllSettings();
+    const current = allSettings[key];
+    if (current && current.updatedAt !== expectedUpdatedAt) {
+      res.status(409).json({
+        error: "conflict",
+        serverValue: current.value,
+        serverUpdatedAt: current.updatedAt,
+      });
+      return;
+    }
   }
 
   const result = await setSetting(key, value);
@@ -178,7 +195,10 @@ router.put("/admin/settings/:key", async (req: Request, res: Response) => {
     return;
   }
 
-  res.json({ data: { ok: true } });
+  const allSettings = await getAllSettings();
+  const saved = allSettings[key];
+
+  res.json({ data: { ok: true, updatedAt: saved?.updatedAt ?? null } });
 });
 
 // ─── News management ──────────────────────────────────────────────────────────

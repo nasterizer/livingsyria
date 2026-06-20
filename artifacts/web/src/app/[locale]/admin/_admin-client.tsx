@@ -10,6 +10,16 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Loader2,
   RefreshCw,
   Check,
@@ -42,6 +52,7 @@ type Setting = {
   label: string;
   description: string | null;
   group: string;
+  updatedAt: string;
 };
 
 type NewsItem = {
@@ -255,13 +266,47 @@ function ListingsTab() {
 type CityRow = { ar: string; en: string };
 type FeedRow = { name: string; url: string; language: string; enabled: boolean };
 
+function ConflictDialog({
+  open,
+  onSaveAnyway,
+  onDiscard,
+}: {
+  open: boolean;
+  onSaveAnyway: () => void;
+  onDiscard: () => void;
+}) {
+  return (
+    <AlertDialog open={open}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Setting changed by another admin</AlertDialogTitle>
+          <AlertDialogDescription>
+            Another admin saved this setting after you opened it. You can
+            overwrite their change, or discard yours and reload the latest value.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={onDiscard}>
+            Discard my changes
+          </AlertDialogCancel>
+          <AlertDialogAction onClick={onSaveAnyway}>
+            Save anyway
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 function CitiesEditor({
   settingKey,
   initial,
+  updatedAt,
   onSaved,
 }: {
   settingKey: string;
   initial: CityRow[];
+  updatedAt: string;
   onSaved: () => void;
 }) {
   const { locale } = useI18n();
@@ -270,18 +315,21 @@ function CitiesEditor({
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [staleWarning, setStaleWarning] = useState(false);
+  const [conflictOpen, setConflictOpen] = useState(false);
   const prevServerRef = useRef(JSON.stringify(initial));
+  const serverUpdatedAtRef = useRef(updatedAt);
 
   useEffect(() => {
     const next = JSON.stringify(initial);
     if (next === prevServerRef.current) return;
     prevServerRef.current = next;
+    serverUpdatedAtRef.current = updatedAt;
     if (isDirty) {
       setStaleWarning(true);
     } else {
       setRows(initial);
     }
-  }, [initial, isDirty]);
+  }, [initial, updatedAt, isDirty]);
 
   const update = (i: number, field: "ar" | "en", val: string) => {
     setRows((r) => r.map((row, idx) => (idx === i ? { ...row, [field]: val } : row)));
@@ -298,19 +346,27 @@ function CitiesEditor({
     setIsDirty(true);
   };
 
-  const save = async () => {
+  const doSave = async (force: boolean) => {
     setIsSaving(true);
     try {
+      const body: Record<string, unknown> = { value: rows };
+      if (!force) body.expectedUpdatedAt = serverUpdatedAtRef.current;
       const res = await fetch(`/api/admin/settings/${settingKey}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value: rows }),
+        body: JSON.stringify(body),
       });
+      if (res.status === 409) {
+        setConflictOpen(true);
+        return;
+      }
       if (!res.ok) {
         const err = await res.json();
         toast({ variant: "destructive", title: err.error ?? "Error" });
         return;
       }
+      const json = await res.json();
+      if (json.data?.updatedAt) serverUpdatedAtRef.current = json.data.updatedAt;
       setIsDirty(false);
       setStaleWarning(false);
       prevServerRef.current = JSON.stringify(rows);
@@ -321,67 +377,88 @@ function CitiesEditor({
     }
   };
 
+  const save = () => doSave(false);
+
+  const handleForceSave = () => {
+    setConflictOpen(false);
+    void doSave(true);
+  };
+
+  const handleDiscard = () => {
+    setConflictOpen(false);
+    onSaved();
+  };
+
   return (
-    <div className="space-y-2">
-      {staleWarning && (
-        <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-          <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
-          {locale === "ar"
-            ? "تم تحديث الإعدادات في مكان آخر. أعد التحميل للاطلاع على أحدث البيانات."
-            : "Settings were updated elsewhere. Reload to see the latest."}
+    <>
+      <ConflictDialog
+        open={conflictOpen}
+        onSaveAnyway={handleForceSave}
+        onDiscard={handleDiscard}
+      />
+      <div className="space-y-2">
+        {staleWarning && (
+          <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
+            {locale === "ar"
+              ? "تم تحديث الإعدادات في مكان آخر. أعد التحميل للاطلاع على أحدث البيانات."
+              : "Settings were updated elsewhere. Reload to see the latest."}
+          </div>
+        )}
+        <div className="grid grid-cols-[1fr_1fr_auto] gap-1.5 text-xs font-medium text-muted-foreground mb-1 px-1">
+          <span>{locale === "ar" ? "الاسم بالعربية" : "Arabic name"}</span>
+          <span>{locale === "ar" ? "الاسم بالإنجليزية" : "English name"}</span>
+          <span />
         </div>
-      )}
-      <div className="grid grid-cols-[1fr_1fr_auto] gap-1.5 text-xs font-medium text-muted-foreground mb-1 px-1">
-        <span>{locale === "ar" ? "الاسم بالعربية" : "Arabic name"}</span>
-        <span>{locale === "ar" ? "الاسم بالإنجليزية" : "English name"}</span>
-        <span />
-      </div>
-      {rows.map((row, i) => (
-        <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-1.5 items-center">
-          <Input
-            value={row.ar}
-            dir="rtl"
-            placeholder="مثال: دمشق"
-            className="h-8 text-sm"
-            onChange={(e) => update(i, "ar", e.target.value)}
-          />
-          <Input
-            value={row.en}
-            placeholder="e.g. Damascus"
-            className="h-8 text-sm"
-            onChange={(e) => update(i, "en", e.target.value)}
-          />
+        {rows.map((row, i) => (
+          <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-1.5 items-center">
+            <Input
+              value={row.ar}
+              dir="rtl"
+              placeholder="مثال: دمشق"
+              className="h-8 text-sm"
+              onChange={(e) => update(i, "ar", e.target.value)}
+            />
+            <Input
+              value={row.en}
+              placeholder="e.g. Damascus"
+              className="h-8 text-sm"
+              onChange={(e) => update(i, "en", e.target.value)}
+            />
+            <button
+              onClick={() => remove(i)}
+              className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+        <div className="flex items-center justify-between pt-1">
           <button
-            onClick={() => remove(i)}
-            className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+            onClick={add}
+            className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 font-medium transition-colors"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Plus className="h-3.5 w-3.5" />
+            {locale === "ar" ? "إضافة مدينة" : "Add city"}
           </button>
+          <Button size="sm" onClick={save} disabled={isSaving} className="h-8">
+            {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : locale === "ar" ? "حفظ" : "Save"}
+          </Button>
         </div>
-      ))}
-      <div className="flex items-center justify-between pt-1">
-        <button
-          onClick={add}
-          className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 font-medium transition-colors"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          {locale === "ar" ? "إضافة مدينة" : "Add city"}
-        </button>
-        <Button size="sm" onClick={save} disabled={isSaving} className="h-8">
-          {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : locale === "ar" ? "حفظ" : "Save"}
-        </Button>
       </div>
-    </div>
+    </>
   );
 }
 
 function FeedsEditor({
   settingKey,
   initial,
+  updatedAt,
   onSaved,
 }: {
   settingKey: string;
   initial: FeedRow[];
+  updatedAt: string;
   onSaved: () => void;
 }) {
   const { locale } = useI18n();
@@ -390,18 +467,21 @@ function FeedsEditor({
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [staleWarning, setStaleWarning] = useState(false);
+  const [conflictOpen, setConflictOpen] = useState(false);
   const prevServerRef = useRef(JSON.stringify(initial));
+  const serverUpdatedAtRef = useRef(updatedAt);
 
   useEffect(() => {
     const next = JSON.stringify(initial);
     if (next === prevServerRef.current) return;
     prevServerRef.current = next;
+    serverUpdatedAtRef.current = updatedAt;
     if (isDirty) {
       setStaleWarning(true);
     } else {
       setRows(initial);
     }
-  }, [initial, isDirty]);
+  }, [initial, updatedAt, isDirty]);
 
   const updateField = (i: number, field: keyof FeedRow, val: string | boolean) => {
     setRows((r) => r.map((row, idx) => (idx === i ? { ...row, [field]: val } : row)));
@@ -418,19 +498,27 @@ function FeedsEditor({
     setIsDirty(true);
   };
 
-  const save = async () => {
+  const doSave = async (force: boolean) => {
     setIsSaving(true);
     try {
+      const body: Record<string, unknown> = { value: rows };
+      if (!force) body.expectedUpdatedAt = serverUpdatedAtRef.current;
       const res = await fetch(`/api/admin/settings/${settingKey}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value: rows }),
+        body: JSON.stringify(body),
       });
+      if (res.status === 409) {
+        setConflictOpen(true);
+        return;
+      }
       if (!res.ok) {
         const err = await res.json();
         toast({ variant: "destructive", title: err.error ?? "Error" });
         return;
       }
+      const json = await res.json();
+      if (json.data?.updatedAt) serverUpdatedAtRef.current = json.data.updatedAt;
       setIsDirty(false);
       setStaleWarning(false);
       prevServerRef.current = JSON.stringify(rows);
@@ -441,8 +529,26 @@ function FeedsEditor({
     }
   };
 
+  const save = () => doSave(false);
+
+  const handleForceSave = () => {
+    setConflictOpen(false);
+    void doSave(true);
+  };
+
+  const handleDiscard = () => {
+    setConflictOpen(false);
+    onSaved();
+  };
+
   return (
-    <div className="space-y-3">
+    <>
+      <ConflictDialog
+        open={conflictOpen}
+        onSaveAnyway={handleForceSave}
+        onDiscard={handleDiscard}
+      />
+      <div className="space-y-3">
       {staleWarning && (
         <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
           <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
@@ -511,6 +617,7 @@ function FeedsEditor({
         </Button>
       </div>
     </div>
+    </>
   );
 }
 
@@ -536,12 +643,15 @@ function SettingRow({
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [staleWarning, setStaleWarning] = useState(false);
+  const [conflictOpen, setConflictOpen] = useState(false);
   const prevServerRef = useRef(JSON.stringify(setting.value));
+  const serverUpdatedAtRef = useRef(setting.updatedAt);
 
   useEffect(() => {
     const next = JSON.stringify(setting.value);
     if (next === prevServerRef.current) return;
     prevServerRef.current = next;
+    serverUpdatedAtRef.current = setting.updatedAt;
     if (isDirty) {
       setStaleWarning(true);
     } else {
@@ -555,7 +665,7 @@ function SettingRow({
         );
       }
     }
-  }, [setting.value, isDirty]);
+  }, [setting.value, setting.updatedAt, isDirty]);
 
   const valueType = Array.isArray(setting.value)
     ? "array"
@@ -575,42 +685,53 @@ function SettingRow({
       (v) => typeof v === "object" && v !== null && "url" in v,
     );
 
-  const save = async () => {
+  const buildPayload = (): { ok: true; payload: unknown } | { ok: false } => {
+    if (valueType === "boolean") return { ok: true, payload: boolValue };
+    if (valueType === "number") {
+      const n = Number(editValue);
+      if (isNaN(n)) {
+        toast({ variant: "destructive", title: "Invalid number" });
+        return { ok: false };
+      }
+      return { ok: true, payload: n };
+    }
+    if (valueType === "array" || valueType === "object") {
+      try {
+        return { ok: true, payload: JSON.parse(editValue) };
+      } catch {
+        toast({ variant: "destructive", title: "Invalid JSON" });
+        return { ok: false };
+      }
+    }
+    return { ok: true, payload: editValue };
+  };
+
+  const doSave = async (force: boolean) => {
+    const result = buildPayload();
+    if (!result.ok) return;
+    const { payload } = result;
     setIsSaving(true);
     try {
-      let payload: unknown;
-      if (valueType === "boolean") {
-        payload = boolValue;
-      } else if (valueType === "number") {
-        const n = Number(editValue);
-        if (isNaN(n)) {
-          toast({ variant: "destructive", title: "Invalid number" });
-          return;
-        }
-        payload = n;
-      } else if (valueType === "array" || valueType === "object") {
-        try {
-          payload = JSON.parse(editValue);
-        } catch {
-          toast({ variant: "destructive", title: "Invalid JSON" });
-          return;
-        }
-      } else {
-        payload = editValue;
-      }
-
+      const body: Record<string, unknown> = { value: payload };
+      if (!force) body.expectedUpdatedAt = serverUpdatedAtRef.current;
       const res = await fetch(`/api/admin/settings/${settingKey}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value: payload }),
+        body: JSON.stringify(body),
       });
 
+      if (res.status === 409) {
+        setConflictOpen(true);
+        return;
+      }
       if (!res.ok) {
         const err = await res.json();
         toast({ variant: "destructive", title: err.error ?? "Error" });
         return;
       }
 
+      const json = await res.json();
+      if (json.data?.updatedAt) serverUpdatedAtRef.current = json.data.updatedAt;
       setIsDirty(false);
       setStaleWarning(false);
       prevServerRef.current = JSON.stringify(payload);
@@ -621,8 +742,25 @@ function SettingRow({
     }
   };
 
+  const save = () => doSave(false);
+
+  const handleForceSave = () => {
+    setConflictOpen(false);
+    void doSave(true);
+  };
+
+  const handleDiscard = () => {
+    setConflictOpen(false);
+    onSaved();
+  };
+
   return (
     <div className="py-4 border-b border-border/40 last:border-0">
+      <ConflictDialog
+        open={conflictOpen}
+        onSaveAnyway={handleForceSave}
+        onDiscard={handleDiscard}
+      />
       <div className="flex items-center gap-2 mb-0.5">
         <span className="font-medium text-sm text-foreground">
           {setting.label}
@@ -649,12 +787,14 @@ function SettingRow({
         <CitiesEditor
           settingKey={settingKey}
           initial={setting.value as CityRow[]}
+          updatedAt={setting.updatedAt}
           onSaved={onSaved}
         />
       ) : isFeeds ? (
         <FeedsEditor
           settingKey={settingKey}
           initial={setting.value as FeedRow[]}
+          updatedAt={setting.updatedAt}
           onSaved={onSaved}
         />
       ) : (
@@ -669,7 +809,16 @@ function SettingRow({
                   fetch(`/api/admin/settings/${settingKey}`, {
                     method: "PUT",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ value: v }),
+                    body: JSON.stringify({ value: v, expectedUpdatedAt: serverUpdatedAtRef.current }),
+                  }).then(async (res) => {
+                    if (res.status === 409) {
+                      setBoolValue(!v);
+                      setIsDirty(false);
+                      setConflictOpen(true);
+                    } else if (res.ok) {
+                      const json = await res.json();
+                      if (json.data?.updatedAt) serverUpdatedAtRef.current = json.data.updatedAt;
+                    }
                   }).catch(() => {});
                 }}
               />

@@ -177,7 +177,7 @@ export async function getSetting<T>(
 export async function getAllSettings(): Promise<
   Record<
     string,
-    { value: unknown; label: string; description: string | null; group: string }
+    { value: unknown; label: string; description: string | null; group: string; updatedAt: string }
   >
 > {
   const rows = await db.select().from(platformSettingsTable);
@@ -189,6 +189,7 @@ export async function getAllSettings(): Promise<
         label: r.label,
         description: r.description,
         group: r.group,
+        updatedAt: r.updatedAt.toISOString(),
       },
     ]),
   );
