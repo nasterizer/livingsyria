@@ -253,7 +253,7 @@ function ListingsTab() {
 // ─── Settings Tab ─────────────────────────────────────────────────────────────
 
 type CityRow = { ar: string; en: string };
-type FeedRow = { name: string; url: string; language: string };
+type FeedRow = { name: string; url: string; language: string; enabled: boolean };
 
 function CitiesEditor({
   settingKey,
@@ -356,12 +356,12 @@ function FeedsEditor({
   const [rows, setRows] = useState<FeedRow[]>(initial);
   const [isSaving, setIsSaving] = useState(false);
 
-  const update = (i: number, field: keyof FeedRow, val: string) =>
+  const updateField = (i: number, field: keyof FeedRow, val: string | boolean) =>
     setRows((r) => r.map((row, idx) => (idx === i ? { ...row, [field]: val } : row)));
 
   const remove = (i: number) => setRows((r) => r.filter((_, idx) => idx !== i));
 
-  const add = () => setRows((r) => [...r, { name: "", url: "", language: "ar" }]);
+  const add = () => setRows((r) => [...r, { name: "", url: "", language: "ar", enabled: true }]);
 
   const save = async () => {
     setIsSaving(true);
@@ -399,14 +399,14 @@ function FeedsEditor({
               value={row.name}
               placeholder="BBC Arabic"
               className="h-7 text-sm"
-              onChange={(e) => update(i, "name", e.target.value)}
+              onChange={(e) => updateField(i, "name", e.target.value)}
             />
             <span className="text-xs text-muted-foreground">URL</span>
             <Input
               value={row.url}
               placeholder="https://…/rss.xml"
               className="h-7 text-sm font-mono"
-              onChange={(e) => update(i, "url", e.target.value)}
+              onChange={(e) => updateField(i, "url", e.target.value)}
             />
             <span className="text-xs text-muted-foreground">{locale === "ar" ? "اللغة" : "Lang"}</span>
             <div className="flex gap-2">
@@ -417,13 +417,18 @@ function FeedsEditor({
                     name={`feed-lang-${i}`}
                     value={lang}
                     checked={row.language === lang}
-                    onChange={() => update(i, "language", lang)}
+                    onChange={() => updateField(i, "language", lang)}
                     className="accent-primary"
                   />
                   {lang}
                 </label>
               ))}
             </div>
+            <span className="text-xs text-muted-foreground">{locale === "ar" ? "مفعّل" : "Enabled"}</span>
+            <Switch
+              checked={row.enabled !== false}
+              onCheckedChange={(v) => updateField(i, "enabled", v)}
+            />
           </div>
         </div>
       ))}

@@ -15,6 +15,7 @@ export interface FeedSource {
   name: string;
   url: string;
   language: "ar" | "en";
+  enabled?: boolean;
 }
 
 interface AiNewsResult {
@@ -79,15 +80,17 @@ export async function ingestFeeds(): Promise<{
   const feeds = await getSetting<FeedSource[]>("news.feeds", []);
   const maxItems = await getSetting<number>("news.max_items_per_feed", 5);
 
-  if (feeds.length === 0) {
-    logger.warn("No news feeds configured in platform settings");
+  const activeFeeds = feeds.filter((f) => f.enabled !== false);
+
+  if (activeFeeds.length === 0) {
+    logger.warn("No active news feeds configured in platform settings");
     return { inserted: 0, skipped: 0 };
   }
 
   let inserted = 0;
   let skipped = 0;
 
-  for (const feed of feeds) {
+  for (const feed of activeFeeds) {
     let parsed;
     try {
       parsed = await parser.parseURL(feed.url);
