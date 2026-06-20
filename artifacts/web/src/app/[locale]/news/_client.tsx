@@ -184,6 +184,14 @@ export function NewsListClient({ initialData }: NewsListClientProps) {
           )}
         </div>
 
+        {hasFilters && !isLoading && data && (
+          <p className="text-sm text-muted-foreground mb-6 -mt-2">
+            {data.meta.total === 1
+              ? t("news.results_count_one")
+              : t("news.results_count", { count: data.meta.total })}
+          </p>
+        )}
+
         {isLoading ? (
           <div className="space-y-6">
             {Array.from({ length: 4 }).map((_, i) => (
