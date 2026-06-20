@@ -1,22 +1,13 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { Readable } from "stream";
 import {
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
 } from "@workspace/api-zod";
-import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
-import { ObjectPermission } from "../lib/objectAcl";
+import { ObjectStorageService } from "../lib/objectStorage";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
 
-/**
- * POST /storage/uploads/request-url
- *
- * Request a presigned URL for file upload.
- * The client sends JSON metadata (name, size, contentType) — NOT the file.
- * Then uploads the file directly to the returned presigned URL.
- */
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const ALLOWED_UPLOAD_TYPES = new Set([
   "image/jpeg",
@@ -25,28 +16,42 @@ const ALLOWED_UPLOAD_TYPES = new Set([
   "image/gif",
 ]);
 
+/**
+ * POST /storage/uploads/request-url
+ *
+ * Returns a pre-signed R2 PUT URL plus the permanent public URL (objectPath)
+ * that should be stored in the database.
+ *
+ * Flow:
+ *   1. Client POSTs metadata (name, size, contentType)
+ *   2. Server returns { uploadURL, objectPath, metadata }
+ *   3. Client PUTs the file directly to uploadURL (no server proxy)
+ *   4. Client stores objectPath in the listing payload
+ */
 router.post("/storage/uploads/request-url", async (req: Request, res: Response) => {
   if (!req.isAuthenticated()) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
+
   const parsed = RequestUploadUrlBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Missing or invalid required fields" });
     return;
   }
 
-  try {
-    const { name, size, contentType } = parsed.data;
-    if (size > MAX_UPLOAD_BYTES) {
-      res.status(413).json({ error: `File too large (max ${MAX_UPLOAD_BYTES} bytes)` });
-      return;
-    }
-    if (!ALLOWED_UPLOAD_TYPES.has(contentType)) {
-      res.status(415).json({ error: "Unsupported content type" });
-      return;
-    }
+  const { name, size, contentType } = parsed.data;
 
+  if (size > MAX_UPLOAD_BYTES) {
+    res.status(413).json({ error: `File too large (max ${MAX_UPLOAD_BYTES} bytes)` });
+    return;
+  }
+  if (!ALLOWED_UPLOAD_TYPES.has(contentType)) {
+    res.status(415).json({ error: "Unsupported content type" });
+    return;
+  }
+
+  try {
     const uploadURL = await objectStorageService.getObjectEntityUploadURL();
     const objectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
 
@@ -58,91 +63,8 @@ router.post("/storage/uploads/request-url", async (req: Request, res: Response) 
       }),
     );
   } catch (error) {
-    req.log.error({ err: error }, "Error generating upload URL");
+    req.log.error({ err: error }, "Error generating R2 upload URL");
     res.status(500).json({ error: "Failed to generate upload URL" });
-  }
-});
-
-/**
- * GET /storage/public-objects/*
- *
- * Serve public assets from PUBLIC_OBJECT_SEARCH_PATHS.
- * These are unconditionally public — no authentication or ACL checks.
- * IMPORTANT: Always provide this endpoint when object storage is set up.
- */
-router.get("/storage/public-objects/*filePath", async (req: Request, res: Response) => {
-  try {
-    const raw = req.params.filePath;
-    const filePath = Array.isArray(raw) ? raw.join("/") : raw;
-    const file = await objectStorageService.searchPublicObject(filePath);
-    if (!file) {
-      res.status(404).json({ error: "File not found" });
-      return;
-    }
-
-    const response = await objectStorageService.downloadObject(file);
-
-    res.status(response.status);
-    response.headers.forEach((value, key) => res.setHeader(key, value));
-
-    if (response.body) {
-      const nodeStream = Readable.fromWeb(response.body as ReadableStream<Uint8Array>);
-      nodeStream.pipe(res);
-    } else {
-      res.end();
-    }
-  } catch (error) {
-    req.log.error({ err: error }, "Error serving public object");
-    res.status(500).json({ error: "Failed to serve public object" });
-  }
-});
-
-/**
- * GET /storage/objects/*
- *
- * Serve object entities from PRIVATE_OBJECT_DIR.
- * These are served from a separate path from /public-objects and can optionally
- * be protected with authentication or ACL checks based on the use case.
- */
-router.get("/storage/objects/*path", async (req: Request, res: Response) => {
-  try {
-    const raw = req.params.path;
-    const wildcardPath = Array.isArray(raw) ? raw.join("/") : raw;
-    const objectPath = `/objects/${wildcardPath}`;
-    const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
-
-    const userId = req.isAuthenticated() ? req.user.id : undefined;
-    const canAccess = await objectStorageService.canAccessObjectEntity({
-      userId,
-      objectFile,
-      requestedPermission: ObjectPermission.READ,
-    });
-    if (!canAccess) {
-      res.status(userId ? 403 : 401).json({
-        error: userId ? "Forbidden" : "Unauthorized",
-      });
-      return;
-    }
-
-    const response = await objectStorageService.downloadObject(objectFile);
-
-    res.status(response.status);
-    response.headers.forEach((value, key) => res.setHeader(key, value));
-
-    if (response.body) {
-      const nodeStream = Readable.fromWeb(response.body as ReadableStream<Uint8Array>);
-      nodeStream.pipe(res);
-    } else {
-      res.end();
-    }
-  } catch (error) {
-    if (error instanceof ObjectNotFoundError) {
-      req.log.warn({ err: error }, "Object not found");
-      res.status(404).json({ error: "Object not found" });
-      return;
-    }
-    req.log.error({ err: error }, "Error serving object");
-    res.status(500).json({ error: "Failed to serve object" });
   }
 });
 

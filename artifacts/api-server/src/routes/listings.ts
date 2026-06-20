@@ -196,10 +196,7 @@ router.post("/listings", async (req: Request, res: Response) => {
   const normalizedPaths: string[] = [];
   for (const rawPath of body.imageObjectPaths ?? []) {
     try {
-      const normalized = await objectStorageService.trySetObjectEntityAclPolicy(
-        rawPath,
-        { owner: req.user.id, visibility: "public" },
-      );
+      const normalized = await objectStorageService.trySetObjectEntityAclPolicy(rawPath);
       normalizedPaths.push(normalized);
     } catch (err) {
       req.log.warn({ err, rawPath }, "Failed to set ACL on listing image");
@@ -323,10 +320,7 @@ router.patch("/listings/:id", async (req: Request, res: Response) => {
     for (const rawPath of body.imageObjectPaths) {
       try {
         const normalized =
-          await objectStorageService.trySetObjectEntityAclPolicy(rawPath, {
-            owner: req.user.id,
-            visibility: "public",
-          });
+          await objectStorageService.trySetObjectEntityAclPolicy(rawPath);
         normalizedPaths.push(normalized);
       } catch (err) {
         req.log.warn({ err, rawPath }, "Failed to set ACL on listing image during edit");
