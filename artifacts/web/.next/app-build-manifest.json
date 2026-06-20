@@ -36,10 +36,10 @@
       "static/chunks/main-app.js",
       "static/chunks/app/[locale]/auth/login/page.js"
     ],
-    "/[locale]/listings/new/page": [
+    "/[locale]/news/[slug]/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/[locale]/listings/new/page.js"
+      "static/chunks/app/[locale]/news/[slug]/page.js"
     ]
   }
 }
