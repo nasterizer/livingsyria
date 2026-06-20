@@ -268,13 +268,35 @@ function CitiesEditor({
   const { toast } = useToast();
   const [rows, setRows] = useState<CityRow[]>(initial);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const [staleWarning, setStaleWarning] = useState(false);
+  const prevServerRef = useRef(JSON.stringify(initial));
 
-  const update = (i: number, field: "ar" | "en", val: string) =>
+  useEffect(() => {
+    const next = JSON.stringify(initial);
+    if (next === prevServerRef.current) return;
+    prevServerRef.current = next;
+    if (isDirty) {
+      setStaleWarning(true);
+    } else {
+      setRows(initial);
+    }
+  }, [initial, isDirty]);
+
+  const update = (i: number, field: "ar" | "en", val: string) => {
     setRows((r) => r.map((row, idx) => (idx === i ? { ...row, [field]: val } : row)));
+    setIsDirty(true);
+  };
 
-  const remove = (i: number) => setRows((r) => r.filter((_, idx) => idx !== i));
+  const remove = (i: number) => {
+    setRows((r) => r.filter((_, idx) => idx !== i));
+    setIsDirty(true);
+  };
 
-  const add = () => setRows((r) => [...r, { ar: "", en: "" }]);
+  const add = () => {
+    setRows((r) => [...r, { ar: "", en: "" }]);
+    setIsDirty(true);
+  };
 
   const save = async () => {
     setIsSaving(true);
@@ -289,6 +311,9 @@ function CitiesEditor({
         toast({ variant: "destructive", title: err.error ?? "Error" });
         return;
       }
+      setIsDirty(false);
+      setStaleWarning(false);
+      prevServerRef.current = JSON.stringify(rows);
       toast({ title: locale === "ar" ? "تم الحفظ" : "Saved" });
       onSaved();
     } finally {
@@ -298,6 +323,14 @@ function CitiesEditor({
 
   return (
     <div className="space-y-2">
+      {staleWarning && (
+        <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
+          {locale === "ar"
+            ? "تم تحديث الإعدادات في مكان آخر. أعد التحميل للاطلاع على أحدث البيانات."
+            : "Settings were updated elsewhere. Reload to see the latest."}
+        </div>
+      )}
       <div className="grid grid-cols-[1fr_1fr_auto] gap-1.5 text-xs font-medium text-muted-foreground mb-1 px-1">
         <span>{locale === "ar" ? "الاسم بالعربية" : "Arabic name"}</span>
         <span>{locale === "ar" ? "الاسم بالإنجليزية" : "English name"}</span>
@@ -355,13 +388,35 @@ function FeedsEditor({
   const { toast } = useToast();
   const [rows, setRows] = useState<FeedRow[]>(initial);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const [staleWarning, setStaleWarning] = useState(false);
+  const prevServerRef = useRef(JSON.stringify(initial));
 
-  const updateField = (i: number, field: keyof FeedRow, val: string | boolean) =>
+  useEffect(() => {
+    const next = JSON.stringify(initial);
+    if (next === prevServerRef.current) return;
+    prevServerRef.current = next;
+    if (isDirty) {
+      setStaleWarning(true);
+    } else {
+      setRows(initial);
+    }
+  }, [initial, isDirty]);
+
+  const updateField = (i: number, field: keyof FeedRow, val: string | boolean) => {
     setRows((r) => r.map((row, idx) => (idx === i ? { ...row, [field]: val } : row)));
+    setIsDirty(true);
+  };
 
-  const remove = (i: number) => setRows((r) => r.filter((_, idx) => idx !== i));
+  const remove = (i: number) => {
+    setRows((r) => r.filter((_, idx) => idx !== i));
+    setIsDirty(true);
+  };
 
-  const add = () => setRows((r) => [...r, { name: "", url: "", language: "ar", enabled: true }]);
+  const add = () => {
+    setRows((r) => [...r, { name: "", url: "", language: "ar", enabled: true }]);
+    setIsDirty(true);
+  };
 
   const save = async () => {
     setIsSaving(true);
@@ -376,6 +431,9 @@ function FeedsEditor({
         toast({ variant: "destructive", title: err.error ?? "Error" });
         return;
       }
+      setIsDirty(false);
+      setStaleWarning(false);
+      prevServerRef.current = JSON.stringify(rows);
       toast({ title: locale === "ar" ? "تم الحفظ" : "Saved" });
       onSaved();
     } finally {
@@ -385,6 +443,14 @@ function FeedsEditor({
 
   return (
     <div className="space-y-3">
+      {staleWarning && (
+        <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
+          {locale === "ar"
+            ? "تم تحديث الإعدادات في مكان آخر. أعد التحميل للاطلاع على أحدث البيانات."
+            : "Settings were updated elsewhere. Reload to see the latest."}
+        </div>
+      )}
       {rows.map((row, i) => (
         <div key={i} className="flex flex-col gap-1.5 p-3 rounded-lg border border-border/50 bg-secondary/30 relative">
           <button
@@ -469,6 +535,27 @@ function SettingRow({
   );
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [staleWarning, setStaleWarning] = useState(false);
+  const prevServerRef = useRef(JSON.stringify(setting.value));
+
+  useEffect(() => {
+    const next = JSON.stringify(setting.value);
+    if (next === prevServerRef.current) return;
+    prevServerRef.current = next;
+    if (isDirty) {
+      setStaleWarning(true);
+    } else {
+      if (typeof setting.value === "boolean") {
+        setBoolValue(setting.value);
+      } else {
+        setEditValue(
+          typeof setting.value === "string"
+            ? setting.value
+            : JSON.stringify(setting.value, null, 2),
+        );
+      }
+    }
+  }, [setting.value, isDirty]);
 
   const valueType = Array.isArray(setting.value)
     ? "array"
@@ -525,6 +612,8 @@ function SettingRow({
       }
 
       setIsDirty(false);
+      setStaleWarning(false);
+      prevServerRef.current = JSON.stringify(payload);
       toast({ title: locale === "ar" ? "تم الحفظ" : "Saved" });
       onSaved();
     } finally {
@@ -546,6 +635,14 @@ function SettingRow({
         <p className="text-xs text-muted-foreground mb-2">
           {setting.description}
         </p>
+      )}
+      {staleWarning && !isCities && !isFeeds && (
+        <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 mb-2">
+          <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
+          {locale === "ar"
+            ? "تم تحديث الإعدادات في مكان آخر. أعد التحميل للاطلاع على أحدث البيانات."
+            : "Settings were updated elsewhere. Reload to see the latest."}
+        </div>
       )}
 
       {isCities ? (
@@ -645,9 +742,30 @@ function SettingsTab() {
     }
   }, []);
 
+  const silentLoad = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/settings");
+      const json = await res.json();
+      if (json.data) setSettings(json.data);
+    } catch {}
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    const handleFocus = () => void silentLoad();
+    const handleVisibility = () => {
+      if (!document.hidden) void silentLoad();
+    };
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [silentLoad]);
 
   // Group settings by their group field
   const grouped = Object.entries(settings).reduce<
