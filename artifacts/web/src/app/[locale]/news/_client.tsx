@@ -73,7 +73,7 @@ export function NewsListClient({ initialData }: NewsListClientProps) {
     };
   }, []);
 
-  const hasFilters = !!searchParam || !!sourceParam;
+  const hasFilters = !!searchParam || !!sourceParam || !!tag;
 
   const { data, isLoading } = useListNews(
     {
@@ -168,6 +168,19 @@ export function NewsListClient({ initialData }: NewsListClientProps) {
             </Select>
           )}
 
+          {tag && (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/30 text-sm font-medium text-primary self-center">
+              <span>#{tag}</span>
+              <button
+                onClick={() => updateParams({ tag: null })}
+                aria-label={t("news.clear_tag")}
+                className="hover:text-primary/60 transition-colors"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+
           {hasFilters && (
             <Button
               variant="ghost"
@@ -175,7 +188,7 @@ export function NewsListClient({ initialData }: NewsListClientProps) {
               className="rounded-full text-muted-foreground hover:text-foreground self-center"
               onClick={() => {
                 setSearchInput("");
-                updateParams({ search: null, source: null });
+                updateParams({ search: null, source: null, tag: null });
               }}
             >
               <X className="h-3.5 w-3.5 me-1" />
@@ -213,7 +226,7 @@ export function NewsListClient({ initialData }: NewsListClientProps) {
                   className="rounded-full"
                   onClick={() => {
                     setSearchInput("");
-                    updateParams({ search: null, source: null });
+                    updateParams({ search: null, source: null, tag: null });
                   }}
                 >
                   {t("news.clear_filters")}
@@ -259,12 +272,17 @@ export function NewsListClient({ initialData }: NewsListClientProps) {
                           <span className="opacity-50">·</span>
                           <div className="flex gap-1.5 flex-wrap">
                             {article.tags.slice(0, 3).map((tg) => (
-                              <span
+                              <button
                                 key={tg}
-                                className="px-2 py-0.5 rounded-full bg-secondary text-foreground/70 text-[11px] font-medium"
+                                onClick={() => updateParams({ tag: tg === tag ? null : tg })}
+                                className={`px-2 py-0.5 rounded-full text-[11px] font-medium transition-colors cursor-pointer ${
+                                  tg === tag
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-secondary text-foreground/70 hover:bg-primary/15 hover:text-primary"
+                                }`}
                               >
                                 #{tg}
-                              </span>
+                              </button>
                             ))}
                           </div>
                         </>
