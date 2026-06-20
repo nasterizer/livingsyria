@@ -55,6 +55,38 @@ router.post("/mobile-auth/sign-in", async (req: Request, res: Response) => {
   }
 });
 
+// ─── Mobile: token-exchange alias (legacy contract) ──────────────────────────
+// Older mobile builds call POST /mobile-auth/token-exchange — delegate to sign-in.
+router.post("/mobile-auth/token-exchange", async (req: Request, res: Response) => {
+  const parsed = MobileSignInBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "email and password are required" });
+    return;
+  }
+
+  try {
+    const result = await auth.api.signInEmail({
+      body: { email: parsed.data.email, password: parsed.data.password },
+      headers: new Headers(),
+    });
+
+    const token = (result as unknown as { token?: string })?.token
+      ?? (result as unknown as { session?: { token?: string } })?.session?.token;
+
+    if (!token) {
+      res.status(401).json({ error: "Sign in failed — no token returned" });
+      return;
+    }
+
+    res.json(MobileSignInResponse.parse({ token }));
+  } catch (err: unknown) {
+    const status = (err as { status?: number })?.status;
+    const message = (err as { message?: string })?.message ?? "Invalid credentials";
+    req.log.error({ err }, "Mobile token-exchange failed");
+    res.status(status === 400 || status === 401 ? status : 401).json({ error: message });
+  }
+});
+
 // ─── Mobile: sign out ─────────────────────────────────────────────────────────
 router.post("/mobile-auth/logout", async (req: Request, res: Response) => {
   try {

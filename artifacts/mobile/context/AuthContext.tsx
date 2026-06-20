@@ -10,6 +10,17 @@ import React, {
 
 const TOKEN_KEY = "@livingsyria_auth_token";
 
+/**
+ * Returns the absolute API base URL.
+ * In Expo native, relative URLs don't work — we need https://<domain>.
+ * EXPO_PUBLIC_DOMAIN is set in .env / app.config for non-dev builds.
+ * Falls back to empty string in web / dev simulator (relative URLs work there).
+ */
+function getApiBase(): string {
+  const domain = process.env.EXPO_PUBLIC_DOMAIN;
+  return domain ? `https://${domain}` : "";
+}
+
 export interface MobileAuthUser {
   id: string;
   email: string;
@@ -35,6 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthTokenGetter(() => token);
   }, [token]);
 
+  // ── Bootstrap: restore session from stored bearer token ──────────────────
   useEffect(() => {
     let active = true;
 
@@ -42,7 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .then(async (stored) => {
         if (!stored) return;
         try {
-          const res = await fetch("/api/me", {
+          const res = await fetch(`${getApiBase()}/api/me`, {
             headers: { Authorization: `Bearer ${stored}` },
           });
           if (!active) return;
@@ -60,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             await AsyncStorage.removeItem(TOKEN_KEY);
           }
         } catch {
-          // network error, keep token for retry
+          // Network error — keep token for retry on next app open
           if (active) setToken(stored);
         }
       })
@@ -73,8 +85,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // ── Sign in via BA email/password endpoint ────────────────────────────────
   const signIn = useCallback(async (email: string, password: string) => {
-    const res = await fetch("/api/auth/sign-in/email", {
+    const res = await fetch(`${getApiBase()}/api/auth/sign-in/email`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
@@ -101,9 +114,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (data.user) setUser(data.user);
   }, []);
 
+  // ── Sign out ──────────────────────────────────────────────────────────────
   const signOut = useCallback(async () => {
     if (token) {
-      await fetch("/api/auth/sign-out", {
+      await fetch(`${getApiBase()}/api/auth/sign-out`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       }).catch(() => {});

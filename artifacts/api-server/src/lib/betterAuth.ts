@@ -58,9 +58,17 @@ export const auth = betterAuth({
     },
   },
 
-  secret:
-    process.env.BETTER_AUTH_SECRET ??
-    "dev-secret-change-me-in-production-min-32-chars!",
+  secret: (() => {
+    const s = process.env.BETTER_AUTH_SECRET;
+    if (!s) {
+      if (process.env.NODE_ENV === "production") {
+        throw new Error("BETTER_AUTH_SECRET env var must be set in production");
+      }
+      console.warn("[betterAuth] BETTER_AUTH_SECRET not set — using insecure dev fallback. Set this env var before deploying.");
+      return "dev-secret-change-me-in-production-min-32-chars!";
+    }
+    return s;
+  })(),
   baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:8080",
   basePath: "/api/auth",
   trustedOrigins: (process.env.TRUSTED_ORIGINS ?? "")
