@@ -10,9 +10,19 @@ import { auth } from "../lib/betterAuth";
 
 const router: IRouter = Router();
 
-// ─── GET /me — returns the authenticated user in the legacy shape ─────────────
-// NOTE: must NOT be under /auth/* — that namespace is owned by Better Auth's handler.
+// ─── GET /me — returns the authenticated user (preferred endpoint) ────────────
 router.get("/me", (req: Request, res: Response) => {
+  res.json(
+    GetCurrentAuthUserResponse.parse({
+      user: req.isAuthenticated() ? req.user : null,
+    }),
+  );
+});
+
+// ─── GET /auth/user — backward-compat alias for /me ──────────────────────────
+// NOTE: app.ts explicitly excludes this URL from the BA handler so it reaches here.
+// Older web clients (use-auth.ts) and any cached requests continue to work.
+router.get("/auth/user", (req: Request, res: Response) => {
   res.json(
     GetCurrentAuthUserResponse.parse({
       user: req.isAuthenticated() ? req.user : null,

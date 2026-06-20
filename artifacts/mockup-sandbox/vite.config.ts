@@ -34,8 +34,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     runtimeErrorOverlay(),
-    ...(process.env.NODE_ENV !== "production" &&
-    process.env.REPL_ID !== undefined
+    ...(process.env.NODE_ENV !== "production"
       ? [
           await import("@replit/vite-plugin-cartographer").then((m) =>
             m.cartographer({

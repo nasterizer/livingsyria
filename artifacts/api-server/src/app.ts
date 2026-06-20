@@ -42,7 +42,9 @@ app.use(cookieParser());
 // Better Auth does its own body parsing for auth routes.
 const baHandler = toNodeHandler(auth);
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (req.url?.startsWith("/api/auth")) {
+  // BA owns all /api/auth/* EXCEPT the backward-compat /api/auth/user endpoint
+  // which is handled by our Express router (returns the logged-in user shape).
+  if (req.url?.startsWith("/api/auth") && req.url !== "/api/auth/user") {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     baHandler(req as any, res as any);
     return;
