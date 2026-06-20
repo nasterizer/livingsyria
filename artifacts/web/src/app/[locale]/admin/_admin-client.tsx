@@ -18,9 +18,11 @@ import {
   Settings,
   Newspaper,
   LayoutList,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatRelative } from "@/lib/i18n";
+import { formatRelative } from "@/lib/format";
 
 type Tab = "listings" | "settings" | "news";
 
@@ -250,6 +252,197 @@ function ListingsTab() {
 
 // ─── Settings Tab ─────────────────────────────────────────────────────────────
 
+type CityRow = { ar: string; en: string };
+type FeedRow = { name: string; url: string; language: string };
+
+function CitiesEditor({
+  settingKey,
+  initial,
+  onSaved,
+}: {
+  settingKey: string;
+  initial: CityRow[];
+  onSaved: () => void;
+}) {
+  const { locale } = useI18n();
+  const { toast } = useToast();
+  const [rows, setRows] = useState<CityRow[]>(initial);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const update = (i: number, field: "ar" | "en", val: string) =>
+    setRows((r) => r.map((row, idx) => (idx === i ? { ...row, [field]: val } : row)));
+
+  const remove = (i: number) => setRows((r) => r.filter((_, idx) => idx !== i));
+
+  const add = () => setRows((r) => [...r, { ar: "", en: "" }]);
+
+  const save = async () => {
+    setIsSaving(true);
+    try {
+      const res = await fetch(`/api/admin/settings/${settingKey}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: rows }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        toast({ variant: "destructive", title: err.error ?? "Error" });
+        return;
+      }
+      toast({ title: locale === "ar" ? "تم الحفظ" : "Saved" });
+      onSaved();
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-[1fr_1fr_auto] gap-1.5 text-xs font-medium text-muted-foreground mb-1 px-1">
+        <span>{locale === "ar" ? "الاسم بالعربية" : "Arabic name"}</span>
+        <span>{locale === "ar" ? "الاسم بالإنجليزية" : "English name"}</span>
+        <span />
+      </div>
+      {rows.map((row, i) => (
+        <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-1.5 items-center">
+          <Input
+            value={row.ar}
+            dir="rtl"
+            placeholder="مثال: دمشق"
+            className="h-8 text-sm"
+            onChange={(e) => update(i, "ar", e.target.value)}
+          />
+          <Input
+            value={row.en}
+            placeholder="e.g. Damascus"
+            className="h-8 text-sm"
+            onChange={(e) => update(i, "en", e.target.value)}
+          />
+          <button
+            onClick={() => remove(i)}
+            className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ))}
+      <div className="flex items-center justify-between pt-1">
+        <button
+          onClick={add}
+          className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 font-medium transition-colors"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          {locale === "ar" ? "إضافة مدينة" : "Add city"}
+        </button>
+        <Button size="sm" onClick={save} disabled={isSaving} className="h-8">
+          {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : locale === "ar" ? "حفظ" : "Save"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function FeedsEditor({
+  settingKey,
+  initial,
+  onSaved,
+}: {
+  settingKey: string;
+  initial: FeedRow[];
+  onSaved: () => void;
+}) {
+  const { locale } = useI18n();
+  const { toast } = useToast();
+  const [rows, setRows] = useState<FeedRow[]>(initial);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const update = (i: number, field: keyof FeedRow, val: string) =>
+    setRows((r) => r.map((row, idx) => (idx === i ? { ...row, [field]: val } : row)));
+
+  const remove = (i: number) => setRows((r) => r.filter((_, idx) => idx !== i));
+
+  const add = () => setRows((r) => [...r, { name: "", url: "", language: "ar" }]);
+
+  const save = async () => {
+    setIsSaving(true);
+    try {
+      const res = await fetch(`/api/admin/settings/${settingKey}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: rows }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        toast({ variant: "destructive", title: err.error ?? "Error" });
+        return;
+      }
+      toast({ title: locale === "ar" ? "تم الحفظ" : "Saved" });
+      onSaved();
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      {rows.map((row, i) => (
+        <div key={i} className="flex flex-col gap-1.5 p-3 rounded-lg border border-border/50 bg-secondary/30 relative">
+          <button
+            onClick={() => remove(i)}
+            className="absolute top-2 end-2 p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+          <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 items-center pr-6">
+            <span className="text-xs text-muted-foreground">{locale === "ar" ? "الاسم" : "Name"}</span>
+            <Input
+              value={row.name}
+              placeholder="BBC Arabic"
+              className="h-7 text-sm"
+              onChange={(e) => update(i, "name", e.target.value)}
+            />
+            <span className="text-xs text-muted-foreground">URL</span>
+            <Input
+              value={row.url}
+              placeholder="https://…/rss.xml"
+              className="h-7 text-sm font-mono"
+              onChange={(e) => update(i, "url", e.target.value)}
+            />
+            <span className="text-xs text-muted-foreground">{locale === "ar" ? "اللغة" : "Lang"}</span>
+            <div className="flex gap-2">
+              {(["ar", "en"] as const).map((lang) => (
+                <label key={lang} className="flex items-center gap-1 cursor-pointer text-sm">
+                  <input
+                    type="radio"
+                    name={`feed-lang-${i}`}
+                    value={lang}
+                    checked={row.language === lang}
+                    onChange={() => update(i, "language", lang)}
+                    className="accent-primary"
+                  />
+                  {lang}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+      ))}
+      <div className="flex items-center justify-between">
+        <button
+          onClick={add}
+          className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 font-medium transition-colors"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          {locale === "ar" ? "إضافة مصدر" : "Add source"}
+        </button>
+        <Button size="sm" onClick={save} disabled={isSaving} className="h-8">
+          {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : locale === "ar" ? "حفظ" : "Save"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function SettingRow({
   settingKey,
   setting,
@@ -275,6 +468,20 @@ function SettingRow({
   const valueType = Array.isArray(setting.value)
     ? "array"
     : typeof setting.value;
+
+  const isCities =
+    settingKey === "listings.cities" &&
+    Array.isArray(setting.value) &&
+    (setting.value as unknown[]).every(
+      (v) => typeof v === "object" && v !== null && "ar" in v && "en" in v,
+    );
+
+  const isFeeds =
+    settingKey === "news.feeds" &&
+    Array.isArray(setting.value) &&
+    (setting.value as unknown[]).every(
+      (v) => typeof v === "object" && v !== null && "url" in v,
+    );
 
   const save = async () => {
     setIsSaving(true);
@@ -322,84 +529,97 @@ function SettingRow({
 
   return (
     <div className="py-4 border-b border-border/40 last:border-0">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className="font-medium text-sm text-foreground">
-              {setting.label}
-            </span>
-            <code className="text-xs text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">
-              {settingKey}
-            </code>
-          </div>
-          {setting.description && (
-            <p className="text-xs text-muted-foreground mb-2">
-              {setting.description}
-            </p>
-          )}
+      <div className="flex items-center gap-2 mb-0.5">
+        <span className="font-medium text-sm text-foreground">
+          {setting.label}
+        </span>
+        <code className="text-xs text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">
+          {settingKey}
+        </code>
+      </div>
+      {setting.description && (
+        <p className="text-xs text-muted-foreground mb-2">
+          {setting.description}
+        </p>
+      )}
 
-          {valueType === "boolean" ? (
-            <Switch
-              checked={boolValue}
-              onCheckedChange={(v) => {
-                setBoolValue(v);
-                setIsDirty(true);
-                // auto-save for booleans
-                fetch(`/api/admin/settings/${settingKey}`, {
-                  method: "PUT",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ value: v }),
-                }).catch(() => {});
-              }}
-            />
-          ) : valueType === "number" ? (
-            <Input
-              type="number"
-              value={editValue}
-              onChange={(e) => {
-                setEditValue(e.target.value);
-                setIsDirty(true);
-              }}
-              className="h-8 text-sm w-40"
-            />
-          ) : valueType === "string" &&
-            (setting.value as string).length < 100 ? (
-            <Input
-              value={editValue}
-              onChange={(e) => {
-                setEditValue(e.target.value);
-                setIsDirty(true);
-              }}
-              className="h-8 text-sm"
-            />
-          ) : (
-            <Textarea
-              value={editValue}
-              rows={valueType === "string" ? 4 : 6}
-              onChange={(e) => {
-                setEditValue(e.target.value);
-                setIsDirty(true);
-              }}
-              className="text-sm font-mono resize-y"
-            />
+      {isCities ? (
+        <CitiesEditor
+          settingKey={settingKey}
+          initial={setting.value as CityRow[]}
+          onSaved={onSaved}
+        />
+      ) : isFeeds ? (
+        <FeedsEditor
+          settingKey={settingKey}
+          initial={setting.value as FeedRow[]}
+          onSaved={onSaved}
+        />
+      ) : (
+        <div className="flex items-start gap-4">
+          <div className="flex-1 min-w-0">
+            {valueType === "boolean" ? (
+              <Switch
+                checked={boolValue}
+                onCheckedChange={(v) => {
+                  setBoolValue(v);
+                  setIsDirty(true);
+                  fetch(`/api/admin/settings/${settingKey}`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ value: v }),
+                  }).catch(() => {});
+                }}
+              />
+            ) : valueType === "number" ? (
+              <Input
+                type="number"
+                value={editValue}
+                onChange={(e) => {
+                  setEditValue(e.target.value);
+                  setIsDirty(true);
+                }}
+                className="h-8 text-sm w-40"
+              />
+            ) : valueType === "string" &&
+              (setting.value as string).length < 100 ? (
+              <Input
+                value={editValue}
+                onChange={(e) => {
+                  setEditValue(e.target.value);
+                  setIsDirty(true);
+                }}
+                className="h-8 text-sm"
+              />
+            ) : (
+              <Textarea
+                value={editValue}
+                rows={valueType === "string" ? 4 : 6}
+                onChange={(e) => {
+                  setEditValue(e.target.value);
+                  setIsDirty(true);
+                }}
+                className="text-sm font-mono resize-y"
+              />
+            )}
+          </div>
+
+          {valueType !== "boolean" && (
+            <Button
+              size="sm"
+              onClick={save}
+              disabled={!isDirty || isSaving}
+              className="mt-0 shrink-0 h-8"
+            >
+              {isSaving ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <>{locale === "ar" ? "حفظ" : "Save"}</>
+              )}
+            </Button>
           )}
         </div>
-
-        {valueType !== "boolean" && (
-          <Button
-            size="sm"
-            onClick={save}
-            disabled={!isDirty || isSaving}
-            className="mt-6 shrink-0 h-8"
-          >
-            {isSaving ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <>{locale === "ar" ? "حفظ" : "Save"}</>
-            )}
-          </Button>
-        )}
-      </div>
+      )}
     </div>
   );
 }
