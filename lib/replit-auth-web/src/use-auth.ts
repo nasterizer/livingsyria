@@ -42,12 +42,22 @@ export function useAuth(): AuthState {
   }, []);
 
   const login = useCallback(() => {
-    const returnTo = typeof window !== "undefined" ? window.location.pathname : "/";
-    window.location.href = `/api/login?returnTo=${encodeURIComponent(returnTo)}`;
+    const path =
+      typeof window !== "undefined" ? window.location.pathname : "/";
+    const locale = path.startsWith("/en") ? "en" : "ar";
+    window.location.href = `/${locale}/auth/login?returnTo=${encodeURIComponent(path)}`;
   }, []);
 
-  const logout = useCallback(() => {
-    window.location.href = "/api/logout";
+  const logout = useCallback(async () => {
+    try {
+      await fetch("/api/auth/sign-out", {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // ignore network errors
+    }
+    window.location.href = "/";
   }, []);
 
   return {

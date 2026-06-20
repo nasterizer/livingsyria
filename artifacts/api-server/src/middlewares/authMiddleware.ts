@@ -1,14 +1,8 @@
-import * as oidc from "openid-client";
+import { fromNodeHeaders } from "better-auth/node";
 import { type Request, type Response, type NextFunction } from "express";
-import {
-  clearSession,
-  getOidcConfig,
-  getSessionId,
-  getSession,
-  updateSession,
-  type SessionData,
-  type AuthUser,
-} from "../lib/auth";
+import { pool } from "@workspace/db";
+import { auth } from "../lib/betterAuth";
+import { splitName, type AuthUser } from "../lib/auth";
 
 declare global {
   namespace Express {
@@ -16,7 +10,6 @@ declare global {
 
     interface Request {
       isAuthenticated(): this is AuthedRequest;
-
       user?: User | undefined;
     }
 
@@ -26,62 +19,74 @@ declare global {
   }
 }
 
-async function refreshIfExpired(
-  sid: string,
-  session: SessionData,
-): Promise<SessionData | null> {
-  const now = Math.floor(Date.now() / 1000);
-  if (!session.expires_at || now <= session.expires_at) return session;
-
-  if (!session.refresh_token) return null;
-
-  try {
-    const config = await getOidcConfig();
-    const tokens = await oidc.refreshTokenGrant(
-      config,
-      session.refresh_token,
-    );
-    session.access_token = tokens.access_token;
-    session.refresh_token = tokens.refresh_token ?? session.refresh_token;
-    session.expires_at = tokens.expiresIn()
-      ? now + tokens.expiresIn()!
-      : session.expires_at;
-    await updateSession(sid, session);
-    return session;
-  } catch {
-    return null;
-  }
-}
-
 export async function authMiddleware(
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction,
 ) {
   req.isAuthenticated = function (this: Request) {
     return this.user != null;
   } as Request["isAuthenticated"];
 
-  const sid = getSessionId(req);
-  if (!sid) {
-    next();
-    return;
+  // ── 1. Cookie-based auth (web clients via Better Auth) ─────────────────────
+  try {
+    const session = await auth.api.getSession({
+      headers: fromNodeHeaders(req.headers),
+    });
+
+    if (session?.user?.id) {
+      const { firstName, lastName } = splitName(session.user.name);
+      req.user = {
+        id: session.user.id,
+        email: session.user.email,
+        firstName,
+        lastName,
+        profileImageUrl: session.user.image ?? null,
+      };
+    }
+  } catch {
+    // invalid or expired session — continue
   }
 
-  const session = await getSession(sid);
-  if (!session?.user?.id) {
-    await clearSession(res, sid);
-    next();
-    return;
+  // ── 2. Bearer token auth (mobile clients) ──────────────────────────────────
+  // BA stores the raw session token in the `session` table. We look it up
+  // directly, bypassing BA's signed-cookie mechanism that doesn't apply here.
+  if (!req.user) {
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith("Bearer ")) {
+      const token = authHeader.slice(7).trim();
+      if (token) {
+        try {
+          const result = await pool.query<{
+            id: string;
+            name: string;
+            email: string;
+            image: string | null;
+          }>(
+            `SELECT u.id, u.name, u.email, u.image
+             FROM session s
+             JOIN "user" u ON u.id = s.user_id
+             WHERE s.token = $1 AND s.expires_at > NOW()
+             LIMIT 1`,
+            [token],
+          );
+          if (result.rows[0]) {
+            const row = result.rows[0];
+            const { firstName, lastName } = splitName(row.name);
+            req.user = {
+              id: row.id,
+              email: row.email,
+              firstName,
+              lastName,
+              profileImageUrl: row.image ?? null,
+            };
+          }
+        } catch {
+          // DB error — continue as unauthenticated
+        }
+      }
+    }
   }
 
-  const refreshed = await refreshIfExpired(sid, session);
-  if (!refreshed) {
-    await clearSession(res, sid);
-    next();
-    return;
-  }
-
-  req.user = refreshed.user;
   next();
 }

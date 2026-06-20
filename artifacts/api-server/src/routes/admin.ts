@@ -12,8 +12,6 @@ const router: IRouter = Router();
 
 function getAdminUserIds(): Set<string> {
   const ids = new Set<string>();
-  const ownerId = process.env.REPL_OWNER_ID;
-  if (ownerId) ids.add(ownerId);
   const extra = process.env.ADMIN_USER_IDS;
   if (extra) {
     for (const id of extra.split(",")) {

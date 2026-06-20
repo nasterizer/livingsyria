@@ -2,9 +2,7 @@ import { cookies } from "next/headers";
 import type { AuthUser } from "@workspace/api-client-react";
 
 function getApiBase(): string {
-  const domain = process.env.REPLIT_DEV_DOMAIN;
-  if (domain) return `https://${domain}`;
-  return process.env.API_BASE_URL || "http://localhost:8080";
+  return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 }
 
 export async function getServerUser(): Promise<AuthUser | null> {
@@ -15,7 +13,7 @@ export async function getServerUser(): Promise<AuthUser | null> {
     .join("; ");
 
   try {
-    const res = await fetch(`${getApiBase()}/api/auth/user`, {
+    const res = await fetch(`${getApiBase()}/api/me`, {
       headers: { cookie: cookieHeader },
       cache: "no-store",
     });

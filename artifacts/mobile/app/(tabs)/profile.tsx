@@ -1,9 +1,9 @@
-import { useGetCurrentAuthUser } from "@workspace/api-client-react";
+import { useRouter } from "expo-router";
 import React from "react";
 import {
   Image,
-  Linking,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,11 +11,16 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useMobileAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 
 const APP_VERSION = "1.0.0";
 
-function InfoRow({ label, value, colors }: {
+function InfoRow({
+  label,
+  value,
+  colors,
+}: {
   label: string;
   value: string;
   colors: ReturnType<typeof import("@/hooks/useColors").useColors>;
@@ -23,8 +28,12 @@ function InfoRow({ label, value, colors }: {
   const styles = makeStyles(colors);
   return (
     <View style={[styles.infoRow, { borderBottomColor: colors.border }]}>
-      <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>{label}</Text>
-      <Text style={[styles.infoValue, { color: colors.foreground }]}>{value}</Text>
+      <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>
+        {label}
+      </Text>
+      <Text style={[styles.infoValue, { color: colors.foreground }]}>
+        {value}
+      </Text>
     </View>
   );
 }
@@ -32,9 +41,8 @@ function InfoRow({ label, value, colors }: {
 export default function ProfileScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { data: authData, isLoading } = useGetCurrentAuthUser();
-
-  const user = authData?.user ?? null;
+  const router = useRouter();
+  const { user, isLoading, signOut } = useMobileAuth();
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 84 : insets.bottom + 60;
@@ -48,25 +56,32 @@ export default function ProfileScreen() {
       showsVerticalScrollIndicator={false}
     >
       <View style={[styles.header, { paddingTop: topPad + 20 }]}>
-        {user?.profileImageUrl ? (
-          <Image source={{ uri: user.profileImageUrl }} style={styles.avatar} />
+        {user?.image ? (
+          <Image source={{ uri: user.image }} style={styles.avatar} />
         ) : (
-          <View style={[styles.avatarPlaceholder, { backgroundColor: colors.primary }]}>
+          <View
+            style={[
+              styles.avatarPlaceholder,
+              { backgroundColor: colors.primary },
+            ]}
+          >
             <Text style={styles.avatarInitial}>
-              {user?.firstName?.[0]?.toUpperCase() ?? "?"}
+              {user?.name?.[0]?.toUpperCase() ?? "?"}
             </Text>
           </View>
         )}
 
         {isLoading ? (
-          <Text style={[styles.userName, { color: colors.mutedForeground }]}>Loading...</Text>
+          <Text style={[styles.userName, { color: colors.mutedForeground }]}>
+            Loading…
+          </Text>
         ) : user ? (
           <>
             <Text style={[styles.userName, { color: colors.foreground }]}>
-              {[user.firstName, user.lastName].filter(Boolean).join(" ") || "User"}
+              {user.name || "User"}
             </Text>
             <Text style={[styles.userEmail, { color: colors.mutedForeground }]}>
-              {user.email ?? ""}
+              {user.email}
             </Text>
           </>
         ) : (
@@ -81,8 +96,46 @@ export default function ProfileScreen() {
         )}
       </View>
 
+      {!isLoading && !user && (
+        <View style={styles.authSection}>
+          <Pressable
+            style={[styles.signInButton, { backgroundColor: colors.primary }]}
+            onPress={() => router.push("/sign-in")}
+          >
+            <Text
+              style={[
+                styles.signInButtonText,
+                { color: colors.primaryForeground },
+              ]}
+            >
+              Sign In
+            </Text>
+          </Pressable>
+        </View>
+      )}
+
+      {user && (
+        <View style={styles.authSection}>
+          <Pressable
+            style={[
+              styles.signOutButton,
+              { borderColor: colors.border },
+            ]}
+            onPress={() => signOut()}
+          >
+            <Text
+              style={[styles.signOutButtonText, { color: colors.foreground }]}
+            >
+              Sign Out
+            </Text>
+          </Pressable>
+        </View>
+      )}
+
       <View style={[styles.section, { backgroundColor: colors.card }]}>
-        <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
+        <Text
+          style={[styles.sectionTitle, { color: colors.mutedForeground }]}
+        >
           APP INFO
         </Text>
         <InfoRow label="Version" value={APP_VERSION} colors={colors} />
@@ -91,19 +144,34 @@ export default function ProfileScreen() {
       </View>
 
       <View style={[styles.section, { backgroundColor: colors.card }]}>
-        <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
+        <Text
+          style={[styles.sectionTitle, { color: colors.mutedForeground }]}
+        >
           ABOUT
         </Text>
-        <InfoRow label="LivingSyria" value="Your Syria platform" colors={colors} />
+        <InfoRow
+          label="LivingSyria"
+          value="Your Syria platform"
+          colors={colors}
+        />
       </View>
 
       <View style={styles.brandingRow}>
-        <View style={[styles.brandingBadge, { backgroundColor: colors.primary }]}>
-          <Text style={[styles.brandingText, { color: colors.primaryForeground }]}>
+        <View
+          style={[styles.brandingBadge, { backgroundColor: colors.primary }]}
+        >
+          <Text
+            style={[
+              styles.brandingText,
+              { color: colors.primaryForeground },
+            ]}
+          >
             LivingSyria
           </Text>
         </View>
-        <Text style={[styles.brandingTagline, { color: colors.mutedForeground }]}>
+        <Text
+          style={[styles.brandingTagline, { color: colors.mutedForeground }]}
+        >
           اكتشف سوريا
         </Text>
       </View>
@@ -111,7 +179,9 @@ export default function ProfileScreen() {
   );
 }
 
-function makeStyles(colors: ReturnType<typeof import("@/hooks/useColors").useColors>) {
+function makeStyles(
+  colors: ReturnType<typeof import("@/hooks/useColors").useColors>,
+) {
   return StyleSheet.create({
     container: {
       flex: 1,
@@ -148,6 +218,29 @@ function makeStyles(colors: ReturnType<typeof import("@/hooks/useColors").useCol
     userEmail: {
       fontFamily: "Inter_400Regular",
       fontSize: 14,
+    },
+    authSection: {
+      paddingHorizontal: 16,
+      paddingBottom: 12,
+    },
+    signInButton: {
+      borderRadius: colors.radius,
+      paddingVertical: 14,
+      alignItems: "center",
+    },
+    signInButtonText: {
+      fontFamily: "Inter_600SemiBold",
+      fontSize: 16,
+    },
+    signOutButton: {
+      borderRadius: colors.radius,
+      paddingVertical: 14,
+      alignItems: "center",
+      borderWidth: 1,
+    },
+    signOutButtonText: {
+      fontFamily: "Inter_600SemiBold",
+      fontSize: 16,
     },
     section: {
       marginHorizontal: 16,

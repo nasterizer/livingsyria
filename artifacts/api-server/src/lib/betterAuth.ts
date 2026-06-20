@@ -1,0 +1,70 @@
+import { betterAuth } from "better-auth";
+import { bearer } from "better-auth/plugins";
+import { pool } from "@workspace/db";
+
+/**
+ * Better Auth — email/password auth using the existing pg Pool.
+ * No Drizzle adapter: avoids the kysely/drizzle-orm dual-instance type conflict.
+ * Tables: user, session, account, verification (BA defaults, singular).
+ * fields overrides map BA's camelCase JS names to our snake_case DB columns.
+ * bearer plugin: enables Authorization: Bearer <token> for mobile clients.
+ */
+export const auth = betterAuth({
+  database: pool,
+  emailAndPassword: {
+    enabled: true,
+  },
+  plugins: [bearer()],
+
+  user: {
+    fields: {
+      emailVerified: "email_verified",
+      createdAt:     "created_at",
+      updatedAt:     "updated_at",
+    },
+  },
+
+  session: {
+    fields: {
+      expiresAt: "expires_at",
+      createdAt: "created_at",
+      updatedAt: "updated_at",
+      ipAddress: "ip_address",
+      userAgent: "user_agent",
+      userId:    "user_id",
+    },
+  },
+
+  account: {
+    fields: {
+      accountId:             "account_id",
+      providerId:            "provider_id",
+      userId:                "user_id",
+      accessToken:           "access_token",
+      refreshToken:          "refresh_token",
+      idToken:               "id_token",
+      accessTokenExpiresAt:  "access_token_expires_at",
+      refreshTokenExpiresAt: "refresh_token_expires_at",
+      createdAt:             "created_at",
+      updatedAt:             "updated_at",
+    },
+  },
+
+  verification: {
+    fields: {
+      expiresAt: "expires_at",
+      createdAt: "created_at",
+      updatedAt: "updated_at",
+    },
+  },
+
+  secret:
+    process.env.BETTER_AUTH_SECRET ??
+    "dev-secret-change-me-in-production-min-32-chars!",
+  baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:8080",
+  basePath: "/api/auth",
+  trustedOrigins: (process.env.TRUSTED_ORIGINS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+});

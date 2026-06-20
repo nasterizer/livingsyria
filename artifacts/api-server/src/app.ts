@@ -1,8 +1,15 @@
-import express, { type Express, type Request, type Response } from "express";
+import express, {
+  type Express,
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import rateLimit from "express-rate-limit";
+import { toNodeHandler } from "better-auth/node";
+import { auth } from "./lib/betterAuth";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { authMiddleware } from "./middlewares/authMiddleware";
@@ -28,8 +35,22 @@ app.use(
     },
   }),
 );
-app.use(cors());
+app.use(cors({ credentials: true, origin: true }));
 app.use(cookieParser());
+
+// ─── Better Auth handler — MUST be before express.json() ─────────────────────
+// Better Auth does its own body parsing for auth routes.
+const baHandler = toNodeHandler(auth);
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (req.url?.startsWith("/api/auth")) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    baHandler(req as any, res as any);
+    return;
+  }
+  next();
+});
+
+// ─── Body parsers for all other routes ───────────────────────────────────────
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 

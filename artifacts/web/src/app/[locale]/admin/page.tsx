@@ -7,12 +7,11 @@ interface Props {
 }
 
 function isAdminUser(userId: string): boolean {
-  const ownerId = process.env.REPL_OWNER_ID;
-  const extra = (process.env.ADMIN_USER_IDS ?? "")
+  const admins = (process.env.ADMIN_USER_IDS ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  return (!!ownerId && userId === ownerId) || extra.includes(userId);
+  return admins.includes(userId);
 }
 
 export default async function AdminPage({ params }: Props) {
