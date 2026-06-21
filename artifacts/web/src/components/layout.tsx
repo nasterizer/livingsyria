@@ -23,6 +23,7 @@ import {
   Store,
   LogOut,
   MessageCircle,
+  Bookmark,
 } from "lucide-react";
 import { useState } from "react";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -148,6 +149,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
+                    <Link href={path("/account/saved")} className="gap-2 cursor-pointer">
+                      <Bookmark className="h-4 w-4" />
+                      {locale === "ar" ? "المحفوظات" : "Saved listings"}
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
                     <Link href={path("/account/messages")} className="gap-2 cursor-pointer">
                       <MessageCircle className="h-4 w-4" />
                       {locale === "ar" ? "الرسائل" : "Messages"}
@@ -224,6 +231,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     {t("nav.listings")}
                   </Link>
                 </Button>
+                {isAuthenticated && (
+                  <Button asChild variant="outline" className="justify-start gap-2 rounded-2xl h-12">
+                    <Link href={path("/account/saved")} onClick={() => setMobileMenuOpen(false)}>
+                      <Bookmark className="h-4 w-4" />
+                      {locale === "ar" ? "المحفوظات" : "Saved"}
+                    </Link>
+                  </Button>
+                )}
               </nav>
 
               <Button

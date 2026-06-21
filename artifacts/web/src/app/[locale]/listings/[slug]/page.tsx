@@ -171,6 +171,7 @@ export default async function ListingDetailPage({
       <article className="container mx-auto px-4 py-8 md:py-10">
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 lg:gap-12">
           <ListingGallery
+            listingId={listing.id}
             images={images}
             title={title}
             slug={listing.slug}
@@ -208,6 +209,7 @@ export default async function ListingDetailPage({
 
               <div className="bg-card rounded-2xl border border-border/60 p-6 shadow-sm">
                 <ListingActions
+                  listingId={listing.id}
                   title={title}
                   price={price}
                   isNegotiable={listing.isNegotiable}

@@ -5,8 +5,9 @@ import {
   listingImagesTable,
   listingDraftsTable,
   categoriesTable,
+  savedListingsTable,
 } from "@workspace/db";
-import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import {
   CreateListingBody,
   ListListingsQueryParams,
@@ -84,6 +85,54 @@ router.get("/listings/me", async (req: Request, res: Response) => {
     .where(eq(listingsTable.userId, req.user.id))
     .orderBy(desc(listingsTable.createdAt));
   res.json({ data: rows });
+});
+
+// ─── GET /listings/me/saved ───────────────────────────────────────────────────
+// Must come before /:slug to avoid "me" being treated as a slug
+router.get("/listings/me/saved", async (req: Request, res: Response) => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const saves = await db
+    .select({ listingId: savedListingsTable.listingId })
+    .from(savedListingsTable)
+    .where(eq(savedListingsTable.userId, req.user.id))
+    .orderBy(desc(savedListingsTable.createdAt));
+
+  if (saves.length === 0) {
+    res.json({ data: [] });
+    return;
+  }
+
+  const ids = saves.map((s) => s.listingId);
+  const listings = await db
+    .select()
+    .from(listingsTable)
+    .where(inArray(listingsTable.id, ids));
+
+  // Preserve saved-recency order
+  const byId = new Map(listings.map((l) => [l.id, l]));
+  const ordered = ids.flatMap((id) => {
+    const l = byId.get(id);
+    return l ? [l] : [];
+  });
+
+  res.json({ data: ordered });
+});
+
+// ─── GET /listings/me/saved-ids ───────────────────────────────────────────────
+router.get("/listings/me/saved-ids", async (req: Request, res: Response) => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const saves = await db
+    .select({ listingId: savedListingsTable.listingId })
+    .from(savedListingsTable)
+    .where(eq(savedListingsTable.userId, req.user.id));
+
+  res.json({ data: saves.map((s) => s.listingId) });
 });
 
 // ─── GET /listings/drafts/me ──────────────────────────────────────────────────
@@ -249,6 +298,50 @@ router.post("/listings", async (req: Request, res: Response) => {
   }
 
   res.status(201).json({ data: created });
+});
+
+// ─── POST /listings/:id/save ──────────────────────────────────────────────────
+router.post("/listings/:id/save", async (req: Request, res: Response) => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const listingId = String(req.params.id);
+
+  const [listing] = await db
+    .select({ id: listingsTable.id })
+    .from(listingsTable)
+    .where(eq(listingsTable.id, listingId))
+    .limit(1);
+
+  if (!listing) {
+    res.status(404).json({ error: "Listing not found" });
+    return;
+  }
+
+  await db
+    .insert(savedListingsTable)
+    .values({ userId: req.user.id, listingId })
+    .onConflictDoNothing();
+
+  res.status(201).json({ data: { saved: true } });
+});
+
+// ─── DELETE /listings/:id/save ────────────────────────────────────────────────
+router.delete("/listings/:id/save", async (req: Request, res: Response) => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  await db
+    .delete(savedListingsTable)
+    .where(
+      and(
+        eq(savedListingsTable.userId, req.user.id),
+        eq(savedListingsTable.listingId, String(req.params.id)),
+      ),
+    );
+  res.json({ data: { saved: false } });
 });
 
 // ─── PATCH /listings/:id — edit own listing ───────────────────────────────────

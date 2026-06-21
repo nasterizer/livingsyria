@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useI18n, formatRelative, formatCurrency } from "@/lib/i18n";
 import {
   useListListings,
@@ -10,6 +10,7 @@ import {
   type ListingsPage,
   type ListCategories200,
 } from "@workspace/api-client-react";
+import { useAuth } from "@workspace/replit-auth-web";
 import { SmartImage } from "@/components/SmartImage";
 import { imageUrl } from "@/lib/image";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Search, Filter, MapPin, Bookmark } from "lucide-react";
+import { getApiBase } from "@/lib/api";
 
 function heightFor(i: number) {
   return 200 + ((i * 53) % 160);
@@ -31,6 +33,7 @@ export function ListingsClient({ initialData, initialCategories }: ListingsClien
   const { t, locale, path } = useI18n();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { isAuthenticated } = useAuth();
 
   const page = parseInt(searchParams.get("page") || "1", 10);
   const categorySlug = searchParams.get("category") || undefined;
@@ -38,6 +41,23 @@ export function ListingsClient({ initialData, initialCategories }: ListingsClien
 
   const [searchQuery, setSearchQuery] = useState(qParam);
   const [saved, setSaved] = useState<Record<string, boolean>>({});
+  const [savePending, setSavePending] = useState<Record<string, boolean>>({});
+
+  // Hydrate saved IDs from API when authenticated
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setSaved({});
+      return;
+    }
+    fetch(`${getApiBase()}/api/listings/me/saved-ids`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((json: { data: string[] }) => {
+        const map: Record<string, boolean> = {};
+        for (const id of json.data) map[id] = true;
+        setSaved(map);
+      })
+      .catch(() => {});
+  }, [isAuthenticated]);
 
   function buildHref(overrides: {
     category?: string | undefined;
@@ -69,11 +89,32 @@ export function ListingsClient({ initialData, initialCategories }: ListingsClien
     router.push(buildHref({ q: searchQuery, page: undefined }));
   };
 
-  const toggleSave = (e: React.MouseEvent, id: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setSaved((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
+  const toggleSave = useCallback(
+    async (e: React.MouseEvent, id: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!isAuthenticated || savePending[id]) return;
+
+      const wasSaved = !!saved[id];
+      setSaved((prev) => ({ ...prev, [id]: !wasSaved }));
+      setSavePending((prev) => ({ ...prev, [id]: true }));
+
+      try {
+        const res = await fetch(`${getApiBase()}/api/listings/${id}/save`, {
+          method: wasSaved ? "DELETE" : "POST",
+          credentials: "include",
+        });
+        if (!res.ok) {
+          setSaved((prev) => ({ ...prev, [id]: wasSaved }));
+        }
+      } catch {
+        setSaved((prev) => ({ ...prev, [id]: wasSaved }));
+      } finally {
+        setSavePending((prev) => ({ ...prev, [id]: false }));
+      }
+    },
+    [isAuthenticated, saved, savePending],
+  );
 
   return (
     <>
@@ -206,10 +247,11 @@ export function ListingsClient({ initialData, initialCategories }: ListingsClien
                           onClick={(e) => toggleSave(e, listing.id)}
                           className={`absolute top-3 end-3 h-9 w-9 rounded-full flex items-center justify-center backdrop-blur transition-all ${
                             isSaved
-                              ? "bg-primary text-primary-foreground shadow-md"
+                              ? "bg-primary text-primary-foreground shadow-md opacity-100"
                               : "bg-card/85 text-foreground hover:bg-card opacity-0 group-hover:opacity-100"
                           }`}
                           aria-label={t("listings.save")}
+                          disabled={!!savePending[listing.id]}
                         >
                           <Bookmark
                             className="h-4 w-4"

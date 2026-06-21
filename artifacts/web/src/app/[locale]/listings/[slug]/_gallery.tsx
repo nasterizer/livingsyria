@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { SmartImage } from "@/components/SmartImage";
 import { imageUrl } from "@/lib/image";
 import { ChevronLeft, ChevronRight, MessageCircle, Bookmark, Share2 } from "lucide-react";
@@ -8,10 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useI18n, formatCurrency } from "@/lib/i18n";
 import { monogramFor } from "@/lib/image";
+import { useAuth } from "@workspace/replit-auth-web";
+import { getApiBase } from "@/lib/api";
 
 type Image = { id: string; objectPath: string; sortOrder: number };
 
 interface Props {
+  listingId: string;
   images: Image[];
   title: string;
   slug: string;
@@ -28,11 +31,50 @@ interface Props {
   descriptionEn?: string | null;
 }
 
-export function ListingGallery({ images, title, slug, price, isNegotiable, categoryName, descriptionAr, descriptionEn }: Props) {
+function useSavedState(listingId: string) {
+  const { isAuthenticated } = useAuth();
+  const [saved, setSaved] = useState(false);
+  const [pending, setPending] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setSaved(false);
+      return;
+    }
+    fetch(`${getApiBase()}/api/listings/me/saved-ids`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((json: { data: string[] }) => {
+        setSaved(json.data.includes(listingId));
+      })
+      .catch(() => {});
+  }, [isAuthenticated, listingId]);
+
+  const toggle = useCallback(async () => {
+    if (!isAuthenticated || pending) return;
+    const wasSaved = saved;
+    setSaved(!wasSaved);
+    setPending(true);
+    try {
+      const res = await fetch(`${getApiBase()}/api/listings/${listingId}/save`, {
+        method: wasSaved ? "DELETE" : "POST",
+        credentials: "include",
+      });
+      if (!res.ok) setSaved(wasSaved);
+    } catch {
+      setSaved(wasSaved);
+    } finally {
+      setPending(false);
+    }
+  }, [isAuthenticated, listingId, saved, pending]);
+
+  return { saved, pending, toggle };
+}
+
+export function ListingGallery({ listingId, images, title, slug, price, isNegotiable, categoryName, descriptionAr, descriptionEn }: Props) {
   const { t, locale, dir } = useI18n();
   const isRtl = dir === "rtl";
   const [activeIndex, setActiveIndex] = useState(0);
-  const [saved, setSaved] = useState(false);
+  const { saved, pending, toggle } = useSavedState(listingId);
 
   const NavPrev = isRtl ? ChevronRight : ChevronLeft;
   const NavNext = isRtl ? ChevronLeft : ChevronRight;
@@ -121,7 +163,12 @@ export function ListingGallery({ images, title, slug, price, isNegotiable, categ
           {t("listings.contact")}
         </Button>
         <div className="grid grid-cols-2 gap-2">
-          <Button variant="outline" onClick={() => setSaved((s) => !s)} className="gap-2 rounded-full">
+          <Button
+            variant="outline"
+            onClick={toggle}
+            disabled={pending}
+            className="gap-2 rounded-full"
+          >
             <Bookmark className="h-4 w-4" fill={saved ? "currentColor" : "none"} />
             {t("listings.save")}
           </Button>
@@ -153,6 +200,7 @@ export function ListingGallery({ images, title, slug, price, isNegotiable, categ
 }
 
 export function ListingActions({
+  listingId,
   title,
   price,
   isNegotiable,
@@ -161,6 +209,7 @@ export function ListingActions({
   descriptionEn,
   createdYear,
 }: {
+  listingId: string;
   title: string;
   price: string;
   isNegotiable: boolean;
@@ -170,7 +219,7 @@ export function ListingActions({
   createdYear: number;
 }) {
   const { t, locale } = useI18n();
-  const [saved, setSaved] = useState(false);
+  const { saved, pending, toggle } = useSavedState(listingId);
   const description = locale === "ar" ? descriptionAr : descriptionEn || descriptionAr;
 
   return (
@@ -208,7 +257,12 @@ export function ListingActions({
               {t("listings.contact")}
             </Button>
             <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" onClick={() => setSaved((s) => !s)} className="gap-2 rounded-full">
+              <Button
+                variant="outline"
+                onClick={toggle}
+                disabled={pending}
+                className="gap-2 rounded-full"
+              >
                 <Bookmark className="h-4 w-4" fill={saved ? "currentColor" : "none"} />
                 {t("listings.save")}
               </Button>
