@@ -24,6 +24,7 @@ import {
   LogOut,
   MessageCircle,
   Bookmark,
+  Settings,
 } from "lucide-react";
 import { useState } from "react";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -158,6 +159,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     <Link href={path("/account/messages")} className="gap-2 cursor-pointer">
                       <MessageCircle className="h-4 w-4" />
                       {locale === "ar" ? "الرسائل" : "Messages"}
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href={path("/account/settings")} className="gap-2 cursor-pointer">
+                      <Settings className="h-4 w-4" />
+                      {t("nav.settings")}
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
