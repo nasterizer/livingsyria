@@ -34,7 +34,14 @@ import {
   Clock,
   CheckCircle2,
   XCircle,
+  History,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { formatRelative } from "@/lib/format";
 
@@ -656,6 +663,27 @@ function SettingRow({
   const [isDirty, setIsDirty] = useState(false);
   const [staleWarning, setStaleWarning] = useState(false);
   const [conflictOpen, setConflictOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyRows, setHistoryRows] = useState<Array<{
+    id: string; settingKey: string; oldValue: unknown; newValue: unknown;
+    changedBy: string | null; changedAt: string;
+  }>>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  const openHistory = async () => {
+    setHistoryOpen(true);
+    setIsLoadingHistory(true);
+    try {
+      const res = await fetch(`/api/admin/settings/${settingKey}/audit`);
+      const json = (await res.json()) as { data?: typeof historyRows };
+      setHistoryRows(json.data ?? []);
+    } catch {
+      setHistoryRows([]);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
   const prevServerRef = useRef(JSON.stringify(setting.value));
   const serverUpdatedAtRef = useRef(setting.updatedAt);
 
@@ -773,6 +801,52 @@ function SettingRow({
         onSaveAnyway={handleForceSave}
         onDiscard={handleDiscard}
       />
+      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <History className="h-4 w-4" />
+              {locale === "ar" ? `سجل التغييرات: ${settingKey}` : `Change history: ${settingKey}`}
+            </DialogTitle>
+          </DialogHeader>
+          {isLoadingHistory ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : historyRows.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              {locale === "ar" ? "لا توجد تغييرات مسجّلة" : "No changes recorded yet"}
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {historyRows.map((row) => (
+                <div key={row.id} className="border border-border/60 rounded-lg p-3 text-xs">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-muted-foreground">
+                      {formatRelative(row.changedAt, locale as "ar" | "en")}
+                      {row.changedBy && ` · ${row.changedBy}`}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-muted-foreground mb-1 font-medium">{locale === "ar" ? "قبل" : "Before"}</p>
+                      <code className="block bg-muted/50 rounded p-1.5 break-all whitespace-pre-wrap max-h-24 overflow-y-auto">
+                        {JSON.stringify(row.oldValue, null, 2) ?? "—"}
+                      </code>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground mb-1 font-medium">{locale === "ar" ? "بعد" : "After"}</p>
+                      <code className="block bg-muted/50 rounded p-1.5 break-all whitespace-pre-wrap max-h-24 overflow-y-auto">
+                        {JSON.stringify(row.newValue, null, 2)}
+                      </code>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
       <div className="flex items-center gap-2 mb-0.5">
         <span className="font-medium text-sm text-foreground">
           {setting.label}
@@ -780,6 +854,13 @@ function SettingRow({
         <code className="text-xs text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">
           {settingKey}
         </code>
+        <button
+          onClick={() => void openHistory()}
+          className="ms-auto text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+          title={locale === "ar" ? "سجل التغييرات" : "Change history"}
+        >
+          <History className="h-3.5 w-3.5" />
+        </button>
       </div>
       {setting.description && (
         <p className="text-xs text-muted-foreground mb-2">

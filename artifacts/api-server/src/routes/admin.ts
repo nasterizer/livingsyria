@@ -3,7 +3,7 @@ import { autoTranslateListing } from "../lib/translation";
 import { moderateListing } from "../lib/moderation";
 import { getAllSettings, getSetting, setSetting } from "../lib/settings";
 import { boss, JOB_NEWS_INGEST, scheduleNewsIngestion } from "../lib/jobQueue";
-import { db, listingsTable, newsArticlesTable, notificationsTable } from "@workspace/db";
+import { db, listingsTable, newsArticlesTable, notificationsTable, settingsAuditLogTable } from "@workspace/db";
 import { and, desc, eq, sql } from "drizzle-orm";
 
 const router: IRouter = Router();
@@ -206,15 +206,18 @@ router.put("/admin/settings/:key", async (req: Request, res: Response) => {
     return;
   }
 
+  // Always read old value for audit log + optimistic locking check
+  const allSettingsBefore = await getAllSettings();
+  const currentSetting = allSettingsBefore[key];
+  const oldValue = currentSetting?.value ?? null;
+
   // Optimistic locking: verify the client's known updatedAt still matches
   if (expectedUpdatedAt !== undefined) {
-    const allSettings = await getAllSettings();
-    const current = allSettings[key];
-    if (current && current.updatedAt !== expectedUpdatedAt) {
+    if (currentSetting && currentSetting.updatedAt !== expectedUpdatedAt) {
       res.status(409).json({
         error: "conflict",
-        serverValue: current.value,
-        serverUpdatedAt: current.updatedAt,
+        serverValue: currentSetting.value,
+        serverUpdatedAt: currentSetting.updatedAt,
       });
       return;
     }
@@ -226,6 +229,20 @@ router.put("/admin/settings/:key", async (req: Request, res: Response) => {
     return;
   }
 
+  // Write audit log (fire-and-forget — do not block response)
+  db.insert(settingsAuditLogTable)
+    .values({
+      settingKey: key,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
+      oldValue: oldValue as any,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
+      newValue: value as any,
+      changedBy: req.user?.id ?? null,
+    })
+    .catch((err: unknown) =>
+      req.log.warn({ err, key }, "Failed to write settings audit log"),
+    );
+
   // When cron interval changes, re-register immediately
   if (key === "news.cron_interval_minutes") {
     const mins = typeof value === "number" ? value : parseFloat(String(value));
@@ -236,10 +253,25 @@ router.put("/admin/settings/:key", async (req: Request, res: Response) => {
     }
   }
 
-  const allSettings = await getAllSettings();
-  const saved = allSettings[key];
+  const allSettingsAfter = await getAllSettings();
+  const saved = allSettingsAfter[key];
 
   res.json({ data: { ok: true, updatedAt: saved?.updatedAt ?? null } });
+});
+
+// ─── GET /admin/settings/:key/audit ──────────────────────────────────────────
+router.get("/admin/settings/:key/audit", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+
+  const key = String(req.params.key);
+  const rows = await db
+    .select()
+    .from(settingsAuditLogTable)
+    .where(eq(settingsAuditLogTable.settingKey, key))
+    .orderBy(desc(settingsAuditLogTable.changedAt))
+    .limit(50);
+
+  res.json({ data: rows });
 });
 
 // ─── News management ──────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import {
   listingDraftsTable,
   categoriesTable,
   savedListingsTable,
+  notificationsTable,
 } from "@workspace/db";
 import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import {
@@ -445,6 +446,9 @@ router.patch("/listings/:id", async (req: Request, res: Response) => {
     }
   }
 
+  const oldPriceCents = listing.priceCents;
+  const oldIsFree = listing.isFree;
+
   const [updated] = await db
     .update(listingsTable)
     .set(updates)
@@ -454,6 +458,49 @@ router.patch("/listings/:id", async (req: Request, res: Response) => {
   if (!updated) {
     res.status(500).json({ error: "Failed to update listing" });
     return;
+  }
+
+  // Notify users who saved this listing if price changed
+  const priceChanged =
+    body.priceCents !== undefined && oldPriceCents !== updated.priceCents;
+  const freeChanged =
+    body.isFree !== undefined && oldIsFree !== updated.isFree;
+
+  if (priceChanged || freeChanged) {
+    const notifEnabled = await getSetting<boolean>("notifications.enabled", true);
+    if (notifEnabled) {
+      const savers = await db
+        .select({ userId: savedListingsTable.userId })
+        .from(savedListingsTable)
+        .where(eq(savedListingsTable.listingId, listing.id));
+
+      if (savers.length > 0) {
+        const titleAr = updated.isFree
+          ? `تم تعديل سعر إعلان محفوظ: ${updated.titleAr} — أصبح مجانيًا`
+          : updated.priceCents
+          ? `تم تعديل سعر إعلان محفوظ: ${updated.titleAr}`
+          : `تم تعديل إعلان محفوظ: ${updated.titleAr}`;
+        const titleEn = updated.isFree
+          ? `Price update on saved listing: ${updated.titleEn ?? updated.titleAr} — now free`
+          : updated.priceCents
+          ? `Price update on saved listing: ${updated.titleEn ?? updated.titleAr}`
+          : `Saved listing updated: ${updated.titleEn ?? updated.titleAr}`;
+
+        db.insert(notificationsTable)
+          .values(
+            savers.map((s) => ({
+              userId: s.userId,
+              type: "listing_price_change",
+              titleAr,
+              titleEn,
+              listingId: listing.id,
+            })),
+          )
+          .catch((err: unknown) =>
+            req.log.warn({ err, listingId: listing.id }, "Failed to create price-change notifications"),
+          );
+      }
+    }
   }
 
   // Re-run moderation and translation on the updated content

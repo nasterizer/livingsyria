@@ -41,6 +41,15 @@ async function getListing(slug: string): Promise<Listing | null> {
   }
 }
 
+async function getPublicSettings(): Promise<{ messagingEnabled: boolean }> {
+  try {
+    const res = await apiFetch<{ data: { messagingEnabled: boolean } }>("/api/settings/public");
+    return { messagingEnabled: res.data.messagingEnabled ?? true };
+  } catch {
+    return { messagingEnabled: true };
+  }
+}
+
 export async function generateMetadata({
   params,
 }: {
@@ -96,10 +105,12 @@ export default async function ListingDetailPage({
   params: { locale: string; slug: string };
 }) {
   const locale = (params.locale as Locale) === "en" ? "en" : "ar";
-  const [listing, serverUser] = await Promise.all([
+  const [listing, serverUser, settings] = await Promise.all([
     getListing(params.slug),
     getServerUser(),
+    getPublicSettings(),
   ]);
+  const { messagingEnabled } = settings;
   const listingsHref = `/${locale}/listings`;
 
   if (!listing) {
@@ -232,17 +243,27 @@ export default async function ListingDetailPage({
                 />
               </div>
 
-              <div className="bg-card rounded-2xl border border-border/60 p-6 shadow-sm">
-                <h3 className="font-serif text-base font-bold mb-4 text-foreground">
-                  {locale === "ar" ? "تواصل مع المعلن" : "Contact seller"}
-                </h3>
-                <ContactSellerForm
-                  listingId={listing.id}
-                  listingOwnerId={listing.userId}
-                  currentUserId={serverUser?.id ?? null}
-                  listingSlug={listing.slug}
-                />
-              </div>
+              {messagingEnabled ? (
+                <div className="bg-card rounded-2xl border border-border/60 p-6 shadow-sm">
+                  <h3 className="font-serif text-base font-bold mb-4 text-foreground">
+                    {locale === "ar" ? "تواصل مع المعلن" : "Contact seller"}
+                  </h3>
+                  <ContactSellerForm
+                    listingId={listing.id}
+                    listingOwnerId={listing.userId}
+                    currentUserId={serverUser?.id ?? null}
+                    listingSlug={listing.slug}
+                  />
+                </div>
+              ) : (
+                <div className="bg-muted/50 rounded-2xl border border-border/60 p-6">
+                  <p className="text-sm font-medium text-muted-foreground text-center">
+                    {locale === "ar"
+                      ? "خاصية المراسلة معطّلة مؤقتًا"
+                      : "Messaging is currently disabled"}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>

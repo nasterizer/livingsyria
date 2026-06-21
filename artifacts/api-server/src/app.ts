@@ -39,7 +39,18 @@ app.use(
     },
   }),
 );
-app.use(cors({ credentials: true, origin: true }));
+const allowedOrigin = process.env.CORS_ORIGIN;
+app.use(
+  cors({
+    credentials: true,
+    origin: allowedOrigin
+      ? (origin, cb) => {
+          if (!origin || origin === allowedOrigin) cb(null, true);
+          else cb(new Error("Not allowed by CORS"));
+        }
+      : true,
+  }),
+);
 app.use(cookieParser());
 
 // ─── Better Auth handler — MUST be before express.json() ─────────────────────
@@ -86,6 +97,21 @@ const writeLimiter = rateLimit({
   legacyHeaders: false,
   message: RATE_LIMIT_BODY,
 });
+
+/** Auth limiter: 10 requests / minute / IP for auth routes (login, register, reset) */
+const authLimiter = rateLimit({
+  windowMs: 60 * 1_000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: RATE_LIMIT_BODY,
+});
+
+// Auth limiter for sensitive auth endpoints
+app.use("/api/auth/sign-in", authLimiter);
+app.use("/api/auth/sign-up", authLimiter);
+app.use("/api/auth/forget-password", authLimiter);
+app.use("/api/auth/reset-password", authLimiter);
 
 // Tight limiter applied first so it fires before the general one on write paths
 app.post("/api/listings", writeLimiter);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useMessagesSSE } from "@/hooks/useMessagesSSE";
 import Link from "next/link";
 import { useI18n, formatRelative } from "@/lib/i18n";
 import { SmartImage } from "@/components/SmartImage";
@@ -58,6 +59,9 @@ export function InboxClient() {
       setIsLoading(false);
     }
   }, []);
+
+  // Wire SSE: auto-refresh inbox whenever a new message arrives server-side
+  useMessagesSSE(() => void loadInbox());
 
   useEffect(() => {
     void loadInbox();

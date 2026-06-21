@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { bearer } from "better-auth/plugins";
 import { pool } from "@workspace/db";
+import { sendEmail } from "./email";
 
 /**
  * Better Auth — email/password auth using the existing pg Pool.
@@ -13,6 +14,22 @@ export const auth = betterAuth({
   database: pool,
   emailAndPassword: {
     enabled: true,
+    sendResetPassword: async ({ user, url }) => {
+      await sendEmail({
+        to: user.email,
+        subject: "Reset your LivingSyria password / إعادة تعيين كلمة مرور ليفينغ سوريا",
+        html: `
+          <div dir="ltr" style="font-family:sans-serif;max-width:520px;margin:auto">
+            <h2>Reset your password</h2>
+            <p>Click the link below to set a new password. The link expires in 1 hour.</p>
+            <p><a href="${url}" style="background:#16a34a;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block">Reset password</a></p>
+            <hr/>
+            <p dir="rtl" style="text-align:right">أو انسخ هذا الرابط وألصقه في متصفحك:</p>
+            <p style="word-break:break-all;font-size:12px;color:#666">${url}</p>
+          </div>
+        `,
+      });
+    },
   },
   plugins: [bearer()],
 

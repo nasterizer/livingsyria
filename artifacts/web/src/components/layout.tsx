@@ -26,8 +26,55 @@ import {
   Bookmark,
   Settings,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { NotificationBell } from "@/components/NotificationBell";
+
+function useSavedCount(isAuthenticated: boolean): number {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    if (!isAuthenticated) { setCount(0); return; }
+    let mounted = true;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/listings/me/saved-ids");
+        if (!res.ok) return;
+        const json = (await res.json()) as { data?: unknown[] };
+        if (mounted) setCount((json.data ?? []).length);
+      } catch { /* ignore */ }
+    };
+    void load();
+    const interval = setInterval(() => void load(), 60_000);
+    const handler = () => void load();
+    window.addEventListener("saved:changed", handler);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+      window.removeEventListener("saved:changed", handler);
+    };
+  }, [isAuthenticated]);
+  return count;
+}
+
+function useUnreadMessageCount(isAuthenticated: boolean): number {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    if (!isAuthenticated) { setCount(0); return; }
+    let mounted = true;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/messages/inbox");
+        if (!res.ok) return;
+        const json = (await res.json()) as { data?: Array<{ unread_count: number }> };
+        const total = (json.data ?? []).reduce((s, t) => s + (t.unread_count ?? 0), 0);
+        if (mounted) setCount(total);
+      } catch { /* ignore */ }
+    };
+    void load();
+    const interval = setInterval(() => void load(), 30_000);
+    return () => { mounted = false; clearInterval(interval); };
+  }, [isAuthenticated]);
+  return count;
+}
 
 function BrandMark() {
   return (
@@ -45,6 +92,8 @@ function BrandMark() {
 export function Layout({ children }: { children: React.ReactNode }) {
   const { t, locale, setLocale, path } = useI18n();
   const { user, isAuthenticated, login, logout } = useAuth();
+  const savedCount = useSavedCount(isAuthenticated);
+  const unreadMessageCount = useUnreadMessageCount(isAuthenticated);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const router = useRouter();
@@ -153,12 +202,22 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     <Link href={path("/account/saved")} className="gap-2 cursor-pointer">
                       <Bookmark className="h-4 w-4" />
                       {locale === "ar" ? "المحفوظات" : "Saved listings"}
+                      {savedCount > 0 && (
+                        <span className="ms-auto text-[10px] font-bold bg-primary text-primary-foreground rounded-full h-4 min-w-4 flex items-center justify-center px-1">
+                          {savedCount}
+                        </span>
+                      )}
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link href={path("/account/messages")} className="gap-2 cursor-pointer">
                       <MessageCircle className="h-4 w-4" />
                       {locale === "ar" ? "الرسائل" : "Messages"}
+                      {unreadMessageCount > 0 && (
+                        <span className="ms-auto text-[10px] font-bold bg-destructive text-destructive-foreground rounded-full h-4 min-w-4 flex items-center justify-center px-1">
+                          {unreadMessageCount}
+                        </span>
+                      )}
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
@@ -243,6 +302,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     <Link href={path("/account/saved")} onClick={() => setMobileMenuOpen(false)}>
                       <Bookmark className="h-4 w-4" />
                       {locale === "ar" ? "المحفوظات" : "Saved"}
+                      {savedCount > 0 && (
+                        <span className="ms-auto text-[10px] font-bold bg-primary text-primary-foreground rounded-full h-4 min-w-4 flex items-center justify-center px-1">
+                          {savedCount}
+                        </span>
+                      )}
                     </Link>
                   </Button>
                 )}
