@@ -32,7 +32,7 @@ interface Props {
 }
 
 function useSavedState(listingId: string) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, login } = useAuth();
   const [saved, setSaved] = useState(false);
   const [pending, setPending] = useState(false);
 
@@ -50,7 +50,11 @@ function useSavedState(listingId: string) {
   }, [isAuthenticated, listingId]);
 
   const toggle = useCallback(async () => {
-    if (!isAuthenticated || pending) return;
+    if (!isAuthenticated) {
+      login();
+      return;
+    }
+    if (pending) return;
     const wasSaved = saved;
     setSaved(!wasSaved);
     setPending(true);
@@ -65,7 +69,7 @@ function useSavedState(listingId: string) {
     } finally {
       setPending(false);
     }
-  }, [isAuthenticated, listingId, saved, pending]);
+  }, [isAuthenticated, login, listingId, saved, pending]);
 
   return { saved, pending, toggle };
 }

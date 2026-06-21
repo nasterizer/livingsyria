@@ -33,7 +33,7 @@ export function ListingsClient({ initialData, initialCategories }: ListingsClien
   const { t, locale, path } = useI18n();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, login } = useAuth();
 
   const page = parseInt(searchParams.get("page") || "1", 10);
   const categorySlug = searchParams.get("category") || undefined;
@@ -93,7 +93,11 @@ export function ListingsClient({ initialData, initialCategories }: ListingsClien
     async (e: React.MouseEvent, id: string) => {
       e.preventDefault();
       e.stopPropagation();
-      if (!isAuthenticated || savePending[id]) return;
+      if (!isAuthenticated) {
+        login();
+        return;
+      }
+      if (savePending[id]) return;
 
       const wasSaved = !!saved[id];
       setSaved((prev) => ({ ...prev, [id]: !wasSaved }));
@@ -113,7 +117,7 @@ export function ListingsClient({ initialData, initialCategories }: ListingsClien
         setSavePending((prev) => ({ ...prev, [id]: false }));
       }
     },
-    [isAuthenticated, saved, savePending],
+    [isAuthenticated, login, saved, savePending],
   );
 
   return (
