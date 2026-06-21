@@ -7,7 +7,8 @@ import { MapPin } from "lucide-react";
 import { ListingGallery, ListingActions } from "./_gallery";
 import { ContactSellerForm } from "./_contact-form";
 import { getServerUser } from "@/lib/server-auth";
-import { imageUrl } from "@/lib/image";
+import { imageUrl, absoluteImageUrl } from "@/lib/image";
+import { getAppUrl } from "@/lib/seo";
 
 type Locale = "ar" | "en";
 
@@ -59,11 +60,20 @@ export async function generateMetadata({
       : listing.descriptionEn || listing.descriptionAr
   )?.substring(0, 155);
 
-  const ogImage = listing.primaryImageUrl ? `/api${listing.primaryImageUrl}` : undefined;
+  const ogImage = absoluteImageUrl(listing.primaryImageUrl);
+  const appUrl = getAppUrl();
+  const slug = params.slug;
 
   return {
     title,
     description,
+    alternates: {
+      canonical: `${appUrl}/ar/listings/${slug}`,
+      languages: {
+        ar: `${appUrl}/ar/listings/${slug}`,
+        en: `${appUrl}/en/listings/${slug}`,
+      },
+    },
     openGraph: {
       title,
       description,
@@ -135,7 +145,9 @@ export default async function ListingDetailPage({
       locale === "ar"
         ? listing.descriptionAr
         : listing.descriptionEn || listing.descriptionAr,
-    image: listing.primaryImageUrl ? [`/api${listing.primaryImageUrl}`] : undefined,
+    image: absoluteImageUrl(listing.primaryImageUrl)
+      ? [absoluteImageUrl(listing.primaryImageUrl)!]
+      : undefined,
     offers: {
       "@type": "Offer",
       priceCurrency: listing.currency,

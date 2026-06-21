@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { apiFetch } from "@/lib/api";
 import { formatDate } from "@/lib/format";
+import { absoluteImageUrl } from "@/lib/image";
+import { getAppUrl } from "@/lib/seo";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -51,13 +53,24 @@ export async function generateMetadata({
       : article.aiSummaryEn || article.aiSummaryAr || article.summaryAr
   )?.substring(0, 155);
 
+  const ogImage = absoluteImageUrl(article.coverImageUrl ?? null);
+  const appUrl = getAppUrl();
+  const slug = params.slug;
+
   return {
     title,
     description,
+    alternates: {
+      canonical: `${appUrl}/ar/news/${slug}`,
+      languages: {
+        ar: `${appUrl}/ar/news/${slug}`,
+        en: `${appUrl}/en/news/${slug}`,
+      },
+    },
     openGraph: {
       title,
       description,
-      images: article.coverImageUrl ? [{ url: article.coverImageUrl }] : [],
+      images: ogImage ? [{ url: ogImage }] : [],
       type: "article",
       publishedTime: article.publishedAt,
       siteName: "LivingSyria",
@@ -66,7 +79,7 @@ export async function generateMetadata({
       card: "summary_large_image",
       title,
       description,
-      images: article.coverImageUrl ? [article.coverImageUrl] : undefined,
+      images: ogImage ? [ogImage] : undefined,
     },
   };
 }

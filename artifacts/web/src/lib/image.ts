@@ -1,3 +1,37 @@
+/**
+ * Returns a fully-qualified HTTPS URL for an object storage path.
+ * Used for og:image and other places where absolute URLs are required.
+ * Falls back to the app's own origin when R2_PUBLIC_URL is not set.
+ */
+export function absoluteImageUrl(
+  path: string | null | undefined,
+): string | null {
+  if (!path) return null;
+  // Already absolute — pass through (e.g. external news cover images)
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    return path;
+  }
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+
+  // Prefer the R2 public bucket URL (fastest, avoids API proxy)
+  const r2Base = process.env.R2_PUBLIC_URL;
+  if (r2Base) {
+    return `${r2Base.replace(/\/$/, "")}${normalized}`;
+  }
+
+  // Fallback: route through the app's own /api proxy
+  const appUrl =
+    process.env.NEXT_PUBLIC_APP_URL ??
+    (process.env.REPLIT_DEV_DOMAIN
+      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+      : null);
+  if (appUrl) {
+    return `${appUrl.replace(/\/$/, "")}/api${normalized}`;
+  }
+
+  return null;
+}
+
 export function imageUrl(objectPath: string | null | undefined): string | null {
   if (!objectPath) return null;
   if (objectPath.startsWith("http://") || objectPath.startsWith("https://")) {
