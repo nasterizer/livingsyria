@@ -33,9 +33,18 @@ export function useAuth(): AuthState {
     void fetchUser();
   }, [fetchUser]);
 
-  const refreshUser = useCallback(async () => {
-    await fetchUser();
+  // Listen for cross-instance refresh broadcasts (e.g. from the settings page)
+  // so every mounted useAuth copy re-fetches at the same time.
+  useEffect(() => {
+    const handler = () => { void fetchUser(); };
+    window.addEventListener("auth:refresh", handler);
+    return () => window.removeEventListener("auth:refresh", handler);
   }, [fetchUser]);
+
+  const refreshUser = useCallback(async () => {
+    // Broadcast to all mounted useAuth instances, then re-fetch locally.
+    window.dispatchEvent(new Event("auth:refresh"));
+  }, []);
 
   const login = useCallback(() => {
     const path =
