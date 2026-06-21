@@ -6,6 +6,7 @@ export const platformSettingsTable = pgTable("platform_settings", {
   label: varchar("label").notNull(),
   description: text("description"),
   group: varchar("group", { length: 64 }).notNull().default("general"),
+  updatedBy: varchar("updated_by"),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow()

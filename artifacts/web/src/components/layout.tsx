@@ -22,8 +22,10 @@ import {
   Newspaper,
   Store,
   LogOut,
+  MessageCircle,
 } from "lucide-react";
 import { useState } from "react";
+import { NotificationBell } from "@/components/NotificationBell";
 
 function BrandMark() {
   return (
@@ -112,6 +114,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <span className={locale === "ar" ? "text-primary" : ""}>AR</span>
             </button>
 
+            {isAuthenticated && <NotificationBell />}
+
             {isAuthenticated ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -141,6 +145,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     <Link href={path("/account/listings")} className="gap-2 cursor-pointer">
                       <Store className="h-4 w-4" />
                       {t("nav.my_listings")}
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href={path("/account/messages")} className="gap-2 cursor-pointer">
+                      <MessageCircle className="h-4 w-4" />
+                      {locale === "ar" ? "الرسائل" : "Messages"}
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />

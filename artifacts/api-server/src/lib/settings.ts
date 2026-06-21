@@ -128,6 +128,24 @@ export const SETTING_DEFAULTS: SettingDefault[] = [
       "Array of {ar, en} objects shown in the location picker on the listing form.",
     group: "listings",
   },
+
+  // ─── Features ──────────────────────────────────────────────────────────────
+  {
+    key: "messaging.enabled",
+    value: true,
+    label: "Enable messaging",
+    description:
+      "When disabled, users cannot send messages to listing owners and the contact form is hidden.",
+    group: "features",
+  },
+  {
+    key: "notifications.enabled",
+    value: true,
+    label: "Enable in-app notifications",
+    description:
+      "When disabled, no notifications are created when listings are approved or rejected.",
+    group: "features",
+  },
 ];
 
 const KNOWN_KEYS = new Set(SETTING_DEFAULTS.map((d) => d.key));
@@ -177,7 +195,14 @@ export async function getSetting<T>(
 export async function getAllSettings(): Promise<
   Record<
     string,
-    { value: unknown; label: string; description: string | null; group: string; updatedAt: string }
+    {
+      value: unknown;
+      label: string;
+      description: string | null;
+      group: string;
+      updatedAt: string;
+      updatedBy: string | null;
+    }
   >
 > {
   const rows = await db.select().from(platformSettingsTable);
@@ -190,6 +215,7 @@ export async function getAllSettings(): Promise<
         description: r.description,
         group: r.group,
         updatedAt: r.updatedAt.toISOString(),
+        updatedBy: r.updatedBy ?? null,
       },
     ]),
   );
@@ -199,13 +225,36 @@ export async function getAllSettings(): Promise<
 export async function setSetting(
   key: string,
   value: unknown,
+  updatedBy?: string,
 ): Promise<{ ok: boolean; error?: string }> {
   if (!KNOWN_KEYS.has(key)) {
     return { ok: false, error: `Unknown setting key: ${key}` };
   }
+
+  // Type guard: new value must be same JS type as the default
+  const def = SETTING_DEFAULTS.find((d) => d.key === key);
+  if (def !== undefined) {
+    const expectedType = Array.isArray(def.value) ? "array" : typeof def.value;
+    const actualType = Array.isArray(value) ? "array" : typeof value;
+    if (expectedType !== actualType) {
+      return {
+        ok: false,
+        error: `Invalid type for "${key}": expected ${expectedType}, got ${actualType}`,
+      };
+    }
+    // Reject empty arrays for required array settings
+    if (actualType === "array" && (value as unknown[]).length === 0) {
+      return { ok: false, error: `Setting "${key}" cannot be an empty array` };
+    }
+  }
+
   await db
     .update(platformSettingsTable)
-    .set({ value, updatedAt: new Date() })
+    .set({
+      value,
+      updatedAt: new Date(),
+      ...(updatedBy ? { updatedBy } : {}),
+    })
     .where(eq(platformSettingsTable.key, key));
   return { ok: true };
 }

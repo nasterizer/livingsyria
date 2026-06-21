@@ -10,7 +10,7 @@ import { useAuth } from "@workspace/replit-auth-web";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, PlusCircle, Store } from "lucide-react";
+import { MapPin, PlusCircle, Store, Pencil } from "lucide-react";
 import { SmartImage } from "@/components/SmartImage";
 import { imageUrl } from "@/lib/image";
 
@@ -103,48 +103,62 @@ export function MyListingsClient() {
                 : t("listings.contact_for_price");
 
               return (
-                <Link
+                <div
                   key={listing.id}
-                  href={path(`/listings/${listing.slug}`)}
-                  className="group block bg-card rounded-2xl overflow-hidden border border-border/60 hover:border-primary/40 hover:shadow-lg transition-all"
+                  className="group bg-card rounded-2xl overflow-hidden border border-border/60 hover:border-primary/40 hover:shadow-lg transition-all flex flex-col"
                 >
-                  <div className="relative aspect-[4/3] overflow-hidden">
-                    <SmartImage
-                      src={imageUrl(listing.primaryImageUrl)}
-                      alt={title}
-                      seed={listing.slug}
-                      imgClassName="group-hover:scale-105"
-                    />
-                    <div className="absolute top-3 end-3">
-                      <Badge
-                        className={
-                          listing.status === "ACTIVE"
-                            ? "bg-emerald-600 text-white border-0 shadow-sm"
-                            : "bg-card text-foreground border border-border/60"
-                        }
-                      >
-                        {listing.status === "ACTIVE"
-                          ? t("me.status.active")
-                          : t("me.status.draft")}
-                      </Badge>
-                    </div>
-                  </div>
-                  <div className="p-4">
-                    <h2 className="font-semibold text-foreground line-clamp-2 leading-snug mb-2 group-hover:text-primary transition-colors">
-                      {title}
-                    </h2>
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="font-serif font-bold text-accent">{price}</div>
-                      <div className="text-xs text-muted-foreground flex items-center gap-1 truncate">
-                        <MapPin className="h-3 w-3 shrink-0" />
-                        <span className="truncate">{listing.city}</span>
+                  <Link href={path(`/listings/${listing.slug}`)} className="flex-1">
+                    <div className="relative aspect-[4/3] overflow-hidden">
+                      <SmartImage
+                        src={imageUrl(listing.primaryImageUrl)}
+                        alt={title}
+                        seed={listing.slug}
+                        imgClassName="group-hover:scale-105"
+                      />
+                      <div className="absolute top-3 end-3">
+                        <Badge
+                          className={
+                            listing.status === "ACTIVE"
+                              ? "bg-emerald-600 text-white border-0 shadow-sm"
+                              : "bg-card text-foreground border border-border/60"
+                          }
+                        >
+                          {listing.status === "ACTIVE"
+                            ? t("me.status.active")
+                            : t("me.status.draft")}
+                        </Badge>
                       </div>
                     </div>
-                    <div className="text-xs text-muted-foreground mt-2">
-                      {formatRelative(listing.createdAt, locale)}
+                    <div className="p-4">
+                      <h2 className="font-semibold text-foreground line-clamp-2 leading-snug mb-2 group-hover:text-primary transition-colors">
+                        {title}
+                      </h2>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="font-serif font-bold text-accent">{price}</div>
+                        <div className="text-xs text-muted-foreground flex items-center gap-1 truncate">
+                          <MapPin className="h-3 w-3 shrink-0" />
+                          <span className="truncate">{listing.city}</span>
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-2">
+                        {formatRelative(listing.createdAt, locale)}
+                      </div>
                     </div>
+                  </Link>
+                  <div className="px-4 pb-3 pt-1 border-t border-border/30">
+                    <Button
+                      asChild
+                      variant="ghost"
+                      size="sm"
+                      className="w-full gap-1.5 rounded-full h-8 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      <Link href={path(`/listings/${listing.slug}/edit`)}>
+                        <Pencil className="h-3 w-3" />
+                        {locale === "ar" ? "تعديل الإعلان" : "Edit listing"}
+                      </Link>
+                    </Button>
                   </div>
-                </Link>
+                </div>
               );
             })}
           </div>

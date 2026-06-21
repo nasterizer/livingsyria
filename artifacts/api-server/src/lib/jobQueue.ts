@@ -9,26 +9,36 @@ if (!DATABASE_URL) {
 
 // Singleton pg-boss instance shared across the process.
 // pg-boss uses PostgreSQL advisory locking so only one replica runs each job.
-export const boss = new PgBoss(DATABASE_URL);
+export const boss = new PgBoss({ connectionString: DATABASE_URL });
 
 boss.on("error", (err: Error) => logger.error({ err }, "pg-boss error"));
 
 export const JOB_NEWS_INGEST = "news-ingest";
 
+let _started = false;
+
 /**
  * Register all job workers and start the pg-boss queue.
- * Must be called once after the server starts listening.
+ * Idempotent — safe to call multiple times (only starts once).
  */
 export async function startJobWorkers(): Promise<void> {
+  if (_started) return;
+  _started = true;
+
   await boss.start();
 
-  // pg-boss v12 requires the queue to exist before work() or schedule() can reference it.
-  await boss.createQueue(JOB_NEWS_INGEST);
+  // pg-boss v12 requires the queue to exist before work() or schedule()
+  await boss.createQueue(JOB_NEWS_INGEST, {
+    retryLimit: 3,
+    retryDelay: 120,
+    retryBackoff: false,
+  });
 
-  await boss.work(JOB_NEWS_INGEST, async () => {
-    await ingestFeeds().catch((err) =>
-      logger.error({ err }, "pg-boss: news ingestion failed"),
-    );
+  await boss.work(JOB_NEWS_INGEST, async (jobs) => {
+    const jobId = Array.isArray(jobs) ? jobs[0]?.id : (jobs as { id?: string }).id;
+    logger.info({ jobId }, "pg-boss: starting news ingestion");
+    await ingestFeeds();
+    logger.info({ jobId }, "pg-boss: news ingestion complete");
   });
 
   logger.info("pg-boss job workers started");
@@ -42,15 +52,19 @@ export async function startJobWorkers(): Promise<void> {
 export async function scheduleNewsIngestion(
   intervalMinutes: number,
 ): Promise<void> {
+  if (!_started) {
+    logger.warn("scheduleNewsIngestion called before startJobWorkers; skipping");
+    return;
+  }
   const cron = minutesToCron(intervalMinutes);
   await boss.schedule(JOB_NEWS_INGEST, cron, {});
   logger.info({ intervalMinutes, cron }, "News ingestion schedule updated");
 }
 
 /**
- * Convert an interval expressed in minutes into a standard cron expression.
+ * Convert an interval in minutes to a standard cron expression.
  *   1–59  minutes → "*\/N * * * *"
- *   ≥ 60  minutes → "0 *\/H * * *"  (rounded to nearest hour)
+ *   ≥ 60  minutes → "0 *\/H * * *" (rounded to nearest hour)
  */
 function minutesToCron(intervalMinutes: number): string {
   const mins = Math.max(1, Math.round(intervalMinutes));

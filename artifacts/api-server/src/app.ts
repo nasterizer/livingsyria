@@ -16,6 +16,10 @@ import { authMiddleware } from "./middlewares/authMiddleware";
 
 const app: Express = express();
 
+// Trust the Replit/proxy X-Forwarded-For header so express-rate-limit
+// identifies clients by their real IP, not the proxy's IP.
+app.set("trust proxy", 1);
+
 app.use(
   pinoHttp({
     logger,

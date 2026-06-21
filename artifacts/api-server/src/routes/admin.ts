@@ -3,7 +3,7 @@ import { autoTranslateListing } from "../lib/translation";
 import { moderateListing } from "../lib/moderation";
 import { getAllSettings, getSetting, setSetting } from "../lib/settings";
 import { boss, JOB_NEWS_INGEST, scheduleNewsIngestion } from "../lib/jobQueue";
-import { db, listingsTable, newsArticlesTable } from "@workspace/db";
+import { db, listingsTable, newsArticlesTable, notificationsTable } from "@workspace/db";
 import { and, desc, eq, sql } from "drizzle-orm";
 
 const router: IRouter = Router();
@@ -36,12 +36,13 @@ function requireAdmin(req: Request, res: Response): boolean {
 }
 
 // ─── GET /settings/public — no auth required ─────────────────────────────────
-router.get("/settings/public", async (req: Request, res: Response) => {
-  const [cities, maxImages] = await Promise.all([
+router.get("/settings/public", async (_req: Request, res: Response) => {
+  const [cities, maxImages, messagingEnabled] = await Promise.all([
     getSetting<Array<{ ar: string; en: string }>>("listings.cities", []),
     getSetting<number>("listings.max_images", 5),
+    getSetting<boolean>("messaging.enabled", true),
   ]);
-  res.json({ data: { cities, maxImages } });
+  res.json({ data: { cities, maxImages, messagingEnabled } });
 });
 
 // ─── GET /admin/me ────────────────────────────────────────────────────────────
@@ -100,7 +101,7 @@ router.post(
     if (!requireAdmin(req, res)) return;
 
     const [listing] = await db
-      .select({ id: listingsTable.id })
+      .select({ id: listingsTable.id, userId: listingsTable.userId, titleAr: listingsTable.titleAr, titleEn: listingsTable.titleEn })
       .from(listingsTable)
       .where(eq(listingsTable.id, String(req.params.id)))
       .limit(1);
@@ -115,6 +116,20 @@ router.post(
       .set({ status: "ACTIVE", publishedAt: new Date() })
       .where(eq(listingsTable.id, String(req.params.id)));
 
+    // Create notification for listing owner (fire-and-forget)
+    const notifEnabled = await getSetting<boolean>("notifications.enabled", true);
+    if (notifEnabled) {
+      db.insert(notificationsTable)
+        .values({
+          userId: listing.userId,
+          type: "listing_approved",
+          titleAr: `تمت الموافقة على إعلانك: ${listing.titleAr}`,
+          titleEn: `Your listing was approved: ${listing.titleEn ?? listing.titleAr}`,
+          listingId: listing.id,
+        })
+        .catch(() => {});
+    }
+
     res.json({ data: { ok: true } });
   },
 );
@@ -125,7 +140,7 @@ router.post(
     if (!requireAdmin(req, res)) return;
 
     const [listing] = await db
-      .select({ id: listingsTable.id })
+      .select({ id: listingsTable.id, userId: listingsTable.userId, titleAr: listingsTable.titleAr, titleEn: listingsTable.titleEn })
       .from(listingsTable)
       .where(eq(listingsTable.id, String(req.params.id)))
       .limit(1);
@@ -137,14 +152,33 @@ router.post(
 
     const { reason } = req.body as { reason?: string };
 
+    if (!reason?.trim()) {
+      res.status(400).json({ error: "A rejection reason is required" });
+      return;
+    }
+
     await db
       .update(listingsTable)
       .set({
         status: "REJECTED",
-        moderationReason: reason ?? null,
+        moderationReason: reason.trim(),
         publishedAt: sql`NULL`,
       })
       .where(eq(listingsTable.id, String(req.params.id)));
+
+    // Create notification for listing owner (fire-and-forget)
+    const notifEnabled = await getSetting<boolean>("notifications.enabled", true);
+    if (notifEnabled) {
+      db.insert(notificationsTable)
+        .values({
+          userId: listing.userId,
+          type: "listing_rejected",
+          titleAr: `تم رفض إعلانك: ${listing.titleAr}. السبب: ${reason.trim()}`,
+          titleEn: `Your listing was rejected: ${listing.titleEn ?? listing.titleAr}. Reason: ${reason.trim()}`,
+          listingId: listing.id,
+        })
+        .catch(() => {});
+    }
 
     res.json({ data: { ok: true } });
   },
@@ -158,7 +192,6 @@ router.get("/admin/settings", async (req: Request, res: Response) => {
   res.json({ data: settings });
 });
 
-// Key may contain dots (e.g. "news.enabled") — dots are allowed in route params
 router.put("/admin/settings/:key", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
 
@@ -173,7 +206,7 @@ router.put("/admin/settings/:key", async (req: Request, res: Response) => {
     return;
   }
 
-  // Optimistic locking: if caller provided expectedUpdatedAt, verify it matches
+  // Optimistic locking: verify the client's known updatedAt still matches
   if (expectedUpdatedAt !== undefined) {
     const allSettings = await getAllSettings();
     const current = allSettings[key];
@@ -187,14 +220,13 @@ router.put("/admin/settings/:key", async (req: Request, res: Response) => {
     }
   }
 
-  const result = await setSetting(key, value);
+  const result = await setSetting(key, value, req.user?.id);
   if (!result.ok) {
     res.status(400).json({ error: result.error });
     return;
   }
 
-  // When the cron interval changes, re-register the pg-boss schedule immediately
-  // so the next run picks up the new timing without a server restart.
+  // When cron interval changes, re-register immediately
   if (key === "news.cron_interval_minutes") {
     const mins = typeof value === "number" ? value : parseFloat(String(value));
     if (!isNaN(mins)) {
@@ -214,11 +246,7 @@ router.put("/admin/settings/:key", async (req: Request, res: Response) => {
 
 router.post("/admin/news/ingest", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
-
-  // Enqueue an immediate one-time job rather than running inline so the HTTP
-  // request returns instantly and a long ingestion run cannot timeout.
   await boss.send(JOB_NEWS_INGEST, {});
-
   res.json({ data: { started: true } });
 });
 
@@ -243,6 +271,46 @@ router.get("/admin/news", async (req: Request, res: Response) => {
   ]);
 
   res.json({ data: { total: total[0]?.count ?? 0, recent } });
+});
+
+// ─── GET /admin/jobs — pg-boss job history ────────────────────────────────────
+router.get("/admin/jobs", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+
+  const [jobs, schedule] = await Promise.all([
+    db.execute(sql`
+      SELECT
+        id,
+        name,
+        state,
+        createdon  AS "createdOn",
+        startedon  AS "startedOn",
+        completedon AS "completedOn",
+        output
+      FROM pgboss.job
+      WHERE name = ${JOB_NEWS_INGEST}
+      ORDER BY createdon DESC
+      LIMIT 20
+    `),
+    db.execute(sql`
+      SELECT
+        name,
+        cron,
+        timezone,
+        created_on AS "createdOn",
+        updated_on AS "updatedOn"
+      FROM pgboss.schedule
+      WHERE name = ${JOB_NEWS_INGEST}
+      LIMIT 1
+    `),
+  ]);
+
+  res.json({
+    data: {
+      jobs: jobs.rows,
+      schedule: schedule.rows[0] ?? null,
+    },
+  });
 });
 
 // ─── Manual moderation & translation triggers ─────────────────────────────────

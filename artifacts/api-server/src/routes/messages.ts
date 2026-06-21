@@ -1,6 +1,8 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db, messagesTable, listingsTable } from "@workspace/db";
 import { and, or, eq, asc, sql } from "drizzle-orm";
+import { getSetting } from "../lib/settings";
+import { appEvents, EVENT_NEW_MESSAGE, emitNewMessage } from "../lib/events";
 
 const router: IRouter = Router();
 
@@ -8,6 +10,14 @@ const router: IRouter = Router();
 router.post("/messages", async (req: Request, res: Response) => {
   if (!req.isAuthenticated()) {
     res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+
+  const enabled = await getSetting<boolean>("messaging.enabled", true);
+  if (!enabled) {
+    res
+      .status(403)
+      .json({ error: "Messaging is currently disabled by the administrator." });
     return;
   }
 
@@ -57,7 +67,52 @@ router.post("/messages", async (req: Request, res: Response) => {
     })
     .returning();
 
+  // Notify recipient via SSE
+  emitNewMessage(toUserId);
+
   res.status(201).json({ data: message });
+});
+
+// ─── GET /messages/events — SSE stream for real-time new-message events ───────
+// Clients keep this connection open; the server pushes a "ping" every 30 s to
+// keep the connection alive and a "message" event when a new message arrives.
+router.get("/messages/events", (req: Request, res: Response) => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+
+  const userId = req.user.id;
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+
+  const send = (event: string, data: string) => {
+    res.write(`event: ${event}\ndata: ${data}\n\n`);
+  };
+
+  send("connected", JSON.stringify({ ok: true }));
+
+  // Periodic heartbeat so the connection is not dropped by proxies
+  const heartbeat = setInterval(() => {
+    res.write(`: ping\n\n`);
+  }, 30_000);
+
+  const onMessage = (recipientId: string) => {
+    if (recipientId === userId) {
+      send("new_message", JSON.stringify({ ts: Date.now() }));
+    }
+  };
+
+  appEvents.on(EVENT_NEW_MESSAGE, onMessage);
+
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    appEvents.off(EVENT_NEW_MESSAGE, onMessage);
+  });
 });
 
 // ─── GET /messages/inbox — my conversations (latest msg per thread) ───────────
@@ -69,7 +124,6 @@ router.get("/messages/inbox", async (req: Request, res: Response) => {
 
   const userId = req.user.id;
 
-  // One row per unique (listing, partner) thread, most recent message first
   const rows = await db.execute(sql`
     SELECT DISTINCT ON (
       m.listing_id,
@@ -113,7 +167,7 @@ router.get("/messages/inbox", async (req: Request, res: Response) => {
   res.json({ data: rows.rows });
 });
 
-// ─── GET /messages/listing/:listingId — full thread (optionally filtered by partner) ──
+// ─── GET /messages/listing/:listingId — full thread ───────────────────────────
 router.get(
   "/messages/listing/:listingId",
   async (req: Request, res: Response) => {
@@ -155,7 +209,7 @@ router.get(
       .where(condition)
       .orderBy(asc(messagesTable.createdAt));
 
-    // Mark incoming messages as read
+    // Mark incoming messages as read (fire-and-forget)
     db.update(messagesTable)
       .set({ readAt: new Date() })
       .where(

@@ -30,11 +30,15 @@ import {
   LayoutList,
   Plus,
   Trash2,
+  Activity,
+  Clock,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatRelative } from "@/lib/format";
 
-type Tab = "listings" | "settings" | "news";
+type Tab = "listings" | "settings" | "news" | "jobs";
 
 type Listing = {
   id: string;
@@ -53,6 +57,7 @@ type Setting = {
   description: string | null;
   group: string;
   updatedAt: string;
+  updatedBy: string | null;
 };
 
 type NewsItem = {
@@ -106,10 +111,17 @@ function ListingsTab() {
   };
 
   const reject = async (id: string) => {
+    if (!rejectReason.trim()) {
+      toast({
+        variant: "destructive",
+        title: locale === "ar" ? "سبب الرفض مطلوب" : "Rejection reason required",
+      });
+      return;
+    }
     await fetch(`/api/admin/listings/${id}/reject`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reason: rejectReason || undefined }),
+      body: JSON.stringify({ reason: rejectReason.trim() }),
     });
     setRejectingId(null);
     setRejectReason("");
@@ -203,7 +215,7 @@ function ListingsTab() {
                   {rejectingId === listing.id ? (
                     <div className="flex flex-col gap-2 min-w-[200px]">
                       <Input
-                        placeholder={locale === "ar" ? "سبب الرفض (اختياري)" : "Reason (optional)"}
+                        placeholder={locale === "ar" ? "سبب الرفض (مطلوب)" : "Reason for rejection (required)"}
                         value={rejectReason}
                         onChange={(e) => setRejectReason(e.target.value)}
                         className="h-8 text-sm"
@@ -774,6 +786,11 @@ function SettingRow({
           {setting.description}
         </p>
       )}
+      <p className="text-xs text-muted-foreground/60 mb-2">
+        {locale === "ar" ? "آخر تعديل:" : "Last modified:"}{" "}
+        {formatRelative(setting.updatedAt, locale as "ar" | "en")}
+        {setting.updatedBy && ` · ${setting.updatedBy}`}
+      </p>
       {staleWarning && !isCities && !isFeeds && (
         <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 mb-2">
           <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
@@ -1058,6 +1075,142 @@ function NewsTab() {
   );
 }
 
+// ─── Jobs Tab ─────────────────────────────────────────────────────────────────
+
+type JobRow = {
+  id: string;
+  name: string;
+  state: string;
+  createdOn: string;
+  startedOn: string | null;
+  completedOn: string | null;
+};
+
+type ScheduleRow = {
+  name: string;
+  cron: string;
+  updatedOn: string;
+};
+
+function JobsTab() {
+  const { locale } = useI18n();
+  const [jobs, setJobs] = useState<JobRow[]>([]);
+  const [schedule, setSchedule] = useState<ScheduleRow | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/admin/jobs");
+      const json = await res.json();
+      setJobs(json.data?.jobs ?? []);
+      setSchedule(json.data?.schedule ?? null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const stateIcon = (state: string) => {
+    switch (state) {
+      case "completed":
+        return <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />;
+      case "failed":
+        return <XCircle className="h-4 w-4 text-red-500 shrink-0" />;
+      default:
+        return <Clock className="h-4 w-4 text-amber-500 shrink-0" />;
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {schedule && (
+        <Card className="border-border/50">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <Activity className="h-5 w-5 text-primary shrink-0" />
+              <div>
+                <p className="text-sm font-semibold">
+                  {locale === "ar" ? "جدول استيراد الأخبار" : "News ingestion schedule"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {locale === "ar" ? "نمط Cron:" : "Cron:"}{" "}
+                  <code className="bg-secondary px-1.5 py-0.5 rounded">{schedule.cron}</code>
+                  {" · "}
+                  {locale === "ar" ? "آخر تحديث:" : "Updated:"}{" "}
+                  {formatRelative(schedule.updatedOn, locale as "ar" | "en")}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+          {locale === "ar" ? "سجل المهام الأخيرة" : "Recent job runs"}
+        </h3>
+        <Button variant="ghost" size="icon" onClick={load} className="h-7 w-7">
+          <RefreshCw className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-16">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : jobs.length === 0 ? (
+        <div className="text-center py-16 text-muted-foreground text-sm">
+          {locale === "ar" ? "لا توجد مهام بعد" : "No jobs yet"}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {jobs.map((job) => (
+            <Card key={job.id} className="border-border/50">
+              <CardContent className="p-3">
+                <div className="flex items-center gap-3">
+                  {stateIcon(job.state)}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium">{job.name}</span>
+                      <span
+                        className={cn(
+                          "text-xs px-1.5 py-0.5 rounded-full font-medium",
+                          job.state === "completed"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : job.state === "failed"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-amber-100 text-amber-700",
+                        )}
+                      >
+                        {job.state}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {locale === "ar" ? "أُنشئ:" : "Created:"}{" "}
+                      {formatRelative(job.createdOn, locale as "ar" | "en")}
+                      {job.completedOn && (
+                        <>
+                          {" · "}
+                          {locale === "ar" ? "اكتمل:" : "Completed:"}{" "}
+                          {formatRelative(job.completedOn, locale as "ar" | "en")}
+                        </>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Admin Dashboard ─────────────────────────────────────────────────────
 
 export function AdminDashboard() {
@@ -1079,6 +1232,11 @@ export function AdminDashboard() {
       id: "news",
       label: { ar: "الأخبار", en: "News" },
       icon: <Newspaper className="h-4 w-4" />,
+    },
+    {
+      id: "jobs",
+      label: { ar: "المهام", en: "Jobs" },
+      icon: <Activity className="h-4 w-4" />,
     },
   ];
 
@@ -1121,6 +1279,7 @@ export function AdminDashboard() {
       {tab === "listings" && <ListingsTab />}
       {tab === "settings" && <SettingsTab />}
       {tab === "news" && <NewsTab />}
+      {tab === "jobs" && <JobsTab />}
     </div>
   );
 }
