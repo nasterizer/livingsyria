@@ -5,7 +5,7 @@ const GEMINI_BASE_URL = process.env.GEMINI_BASE_URL;
 
 if (!GEMINI_API_KEY) {
   throw new Error(
-    "GEMINI_API_KEY must be set.",
+    "GEMINI_API_KEY is required. Set it in your environment variables.",
   );
 }
 

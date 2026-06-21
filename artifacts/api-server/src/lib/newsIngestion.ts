@@ -1,5 +1,5 @@
 import Parser from "rss-parser";
-import { ai } from "@workspace/integrations-gemini-ai";
+import { ai } from "./gemini";
 import { db, newsArticlesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { makeSlug } from "./slug";
