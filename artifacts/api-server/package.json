@@ -26,6 +26,7 @@
     "google-auth-library": "^9.15.0",
     "lru-cache": "^11.0.2",
     "openid-client": "^6.1.7",
+    "pg-boss": "^12.20.0",
     "pino": "^9",
     "pino-http": "^10",
     "rss-parser": "^3.13.0",

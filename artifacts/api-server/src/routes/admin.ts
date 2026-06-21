@@ -1,8 +1,8 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { ingestFeeds } from "../lib/newsIngestion";
 import { autoTranslateListing } from "../lib/translation";
 import { moderateListing } from "../lib/moderation";
 import { getAllSettings, getSetting, setSetting } from "../lib/settings";
+import { boss, JOB_NEWS_INGEST, scheduleNewsIngestion } from "../lib/jobQueue";
 import { db, listingsTable, newsArticlesTable } from "@workspace/db";
 import { and, desc, eq, sql } from "drizzle-orm";
 
@@ -193,6 +193,17 @@ router.put("/admin/settings/:key", async (req: Request, res: Response) => {
     return;
   }
 
+  // When the cron interval changes, re-register the pg-boss schedule immediately
+  // so the next run picks up the new timing without a server restart.
+  if (key === "news.cron_interval_minutes") {
+    const mins = typeof value === "number" ? value : parseFloat(String(value));
+    if (!isNaN(mins)) {
+      scheduleNewsIngestion(mins).catch((err) =>
+        req.log.warn({ err }, "Failed to update news ingestion schedule"),
+      );
+    }
+  }
+
   const allSettings = await getAllSettings();
   const saved = allSettings[key];
 
@@ -204,11 +215,9 @@ router.put("/admin/settings/:key", async (req: Request, res: Response) => {
 router.post("/admin/news/ingest", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
 
-  ingestFeeds()
-    .then(({ inserted, skipped }) =>
-      req.log.info({ inserted, skipped }, "Manual news ingestion complete"),
-    )
-    .catch((err) => req.log.error({ err }, "Manual news ingestion failed"));
+  // Enqueue an immediate one-time job rather than running inline so the HTTP
+  // request returns instantly and a long ingestion run cannot timeout.
+  await boss.send(JOB_NEWS_INGEST, {});
 
   res.json({ data: { started: true } });
 });

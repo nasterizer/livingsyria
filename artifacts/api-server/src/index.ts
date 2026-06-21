@@ -1,7 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { ingestFeeds } from "./lib/newsIngestion";
 import { ensureDefaults, getSetting } from "./lib/settings";
+import { startJobWorkers, scheduleNewsIngestion } from "./lib/jobQueue";
 
 const rawPort = process.env["PORT"];
 
@@ -23,40 +23,18 @@ app.listen(port, (err) => {
 
   logger.info({ port }, "Server listening");
 
-  // Seed platform settings defaults, then start the news ingestion scheduler.
-  // Each iteration re-reads the interval from the DB so changes take effect
-  // on the next scheduled run without requiring a server restart.
+  // Seed platform settings defaults, start pg-boss workers, then register the
+  // news ingestion cron schedule derived from the DB setting.
   ensureDefaults()
-    .then(() => scheduleNewsIngestion())
+    .then(async () => {
+      await startJobWorkers();
+      const intervalMinutes = await getSetting<number>(
+        "news.cron_interval_minutes",
+        60,
+      );
+      await scheduleNewsIngestion(intervalMinutes);
+    })
     .catch((e) =>
-      logger.error({ err: e }, "Failed to initialise platform settings"),
+      logger.error({ err: e }, "Failed to initialise job queue or settings"),
     );
 });
-
-async function scheduleNewsIngestion(): Promise<void> {
-  // Run once immediately (with a small startup delay)
-  await new Promise((r) => setTimeout(r, 5_000));
-
-  await ingestFeeds().catch((e) =>
-    logger.error({ err: e }, "Initial news ingestion failed"),
-  );
-
-  // Then reschedule indefinitely, re-reading the interval from DB each cycle
-  async function loop(): Promise<void> {
-    const intervalMinutes = await getSetting<number>(
-      "news.cron_interval_minutes",
-      60,
-    );
-    const intervalMs = Math.max(1, intervalMinutes) * 60 * 1_000;
-
-    await new Promise((r) => setTimeout(r, intervalMs));
-
-    await ingestFeeds().catch((e) =>
-      logger.error({ err: e }, "Scheduled news ingestion failed"),
-    );
-
-    void loop();
-  }
-
-  void loop();
-}
