@@ -34,7 +34,8 @@
       ]
     },
     "allowJs": true,
-    "strict": false,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
     "incremental": true,
     "esModuleInterop": true
   },

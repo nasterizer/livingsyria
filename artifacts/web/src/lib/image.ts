@@ -30,6 +30,7 @@ function hash(s: string): number {
 
 export function gradientFor(seed: string): { bg: string; fg: string; mid: string } {
   const p = PALETTES[hash(seed) % PALETTES.length];
+  if (!p) return { bg: "", mid: "", fg: "" };
   return { bg: p[0], mid: p[1], fg: p[2] };
 }
 

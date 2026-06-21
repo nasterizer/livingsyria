@@ -77,7 +77,10 @@ export function InboxClient() {
       if (msgs.length > 0) {
         const me = msgs.find((m) => m.fromUserId !== thread.partner_id);
         if (me) setCurrentUserId(me.fromUserId);
-        else setCurrentUserId(msgs[0].toUserId);
+        else {
+          const firstMsg = msgs[0];
+          if (firstMsg) setCurrentUserId(firstMsg.toUserId);
+        }
       }
     } finally {
       setIsLoadingThread(false);

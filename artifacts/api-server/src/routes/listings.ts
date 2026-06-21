@@ -276,6 +276,11 @@ router.post("/listings", async (req: Request, res: Response) => {
     })
     .returning();
 
+  if (!created) {
+    res.status(500).json({ error: "Failed to create listing" });
+    return;
+  }
+
   if (normalizedPaths.length > 0) {
     await db.insert(listingImagesTable).values(
       normalizedPaths.map((path, idx) => ({
@@ -445,6 +450,11 @@ router.patch("/listings/:id", async (req: Request, res: Response) => {
     .set(updates)
     .where(eq(listingsTable.id, listing.id))
     .returning();
+
+  if (!updated) {
+    res.status(500).json({ error: "Failed to update listing" });
+    return;
+  }
 
   // Re-run moderation and translation on the updated content
   moderateListing(
