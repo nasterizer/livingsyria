@@ -3,7 +3,7 @@ import { autoTranslateListing } from "../lib/translation";
 import { moderateListing } from "../lib/moderation";
 import { getAllSettings, getSetting, setSetting } from "../lib/settings";
 import { boss, JOB_NEWS_INGEST, scheduleNewsIngestion } from "../lib/jobQueue";
-import { db, listingsTable, newsArticlesTable, notificationsTable, settingsAuditLogTable } from "@workspace/db";
+import { db, listingsTable, newsArticlesTable, notificationsTable, settingsAuditLogTable, savedListingsTable, baUserTable } from "@workspace/db";
 import { and, desc, eq, sql } from "drizzle-orm";
 
 const router: IRouter = Router();
@@ -166,9 +166,10 @@ router.post(
       })
       .where(eq(listingsTable.id, String(req.params.id)));
 
-    // Create notification for listing owner (fire-and-forget)
+    // Notify listing owner and saved-listing followers (fire-and-forget)
     const notifEnabled = await getSetting<boolean>("notifications.enabled", true);
     if (notifEnabled) {
+      // Notify owner
       db.insert(notificationsTable)
         .values({
           userId: listing.userId,
@@ -176,6 +177,24 @@ router.post(
           titleAr: `تم رفض إعلانك: ${listing.titleAr}. السبب: ${reason.trim()}`,
           titleEn: `Your listing was rejected: ${listing.titleEn ?? listing.titleAr}. Reason: ${reason.trim()}`,
           listingId: listing.id,
+        })
+        .catch(() => {});
+
+      // Notify users who saved this listing
+      db.select({ userId: savedListingsTable.userId })
+        .from(savedListingsTable)
+        .where(eq(savedListingsTable.listingId, listing.id))
+        .then((savers) => {
+          if (savers.length === 0) return;
+          return db.insert(notificationsTable).values(
+            savers.map((s) => ({
+              userId: s.userId,
+              type: "saved_listing_removed",
+              titleAr: `تم إزالة إعلان محفوظ: ${listing.titleAr}`,
+              titleEn: `A saved listing was removed: ${listing.titleEn ?? listing.titleAr}`,
+              listingId: listing.id,
+            })),
+          );
         })
         .catch(() => {});
     }
@@ -265,8 +284,17 @@ router.get("/admin/settings/:key/audit", async (req: Request, res: Response) => 
 
   const key = String(req.params.key);
   const rows = await db
-    .select()
+    .select({
+      id: settingsAuditLogTable.id,
+      settingKey: settingsAuditLogTable.settingKey,
+      oldValue: settingsAuditLogTable.oldValue,
+      newValue: settingsAuditLogTable.newValue,
+      changedBy: settingsAuditLogTable.changedBy,
+      changedAt: settingsAuditLogTable.changedAt,
+      changedByName: baUserTable.name,
+    })
     .from(settingsAuditLogTable)
+    .leftJoin(baUserTable, eq(settingsAuditLogTable.changedBy, baUserTable.id))
     .where(eq(settingsAuditLogTable.settingKey, key))
     .orderBy(desc(settingsAuditLogTable.changedAt))
     .limit(50);

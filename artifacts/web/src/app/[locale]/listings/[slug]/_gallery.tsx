@@ -3,13 +3,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { SmartImage } from "@/components/SmartImage";
 import { imageUrl } from "@/lib/image";
-import { ChevronLeft, ChevronRight, MessageCircle, Bookmark, Share2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, MessageCircle, Bookmark } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useI18n, formatCurrency } from "@/lib/i18n";
 import { monogramFor } from "@/lib/image";
 import { useAuth } from "@workspace/replit-auth-web";
 import { getApiBase } from "@/lib/api";
+import { ShareButtons } from "@/components/ShareButtons";
 
 type Image = { id: string; objectPath: string; sortOrder: number };
 
@@ -166,30 +167,17 @@ export function ListingGallery({ listingId, images, title, slug, price, isNegoti
           <MessageCircle className="h-5 w-5" />
           {t("listings.contact")}
         </Button>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-2">
           <Button
             variant="outline"
             onClick={toggle}
             disabled={pending}
-            className="gap-2 rounded-full"
+            className="w-full gap-2 rounded-full"
           >
             <Bookmark className="h-4 w-4" fill={saved ? "currentColor" : "none"} />
             {t("listings.save")}
           </Button>
-          <Button
-            variant="outline"
-            onClick={() => {
-              if (navigator.share) {
-                navigator.share({ title, url: window.location.href }).catch(() => {});
-              } else {
-                navigator.clipboard?.writeText(window.location.href);
-              }
-            }}
-            className="gap-2 rounded-full"
-          >
-            <Share2 className="h-4 w-4" />
-            {t("common.share")}
-          </Button>
+          <ShareButtons type="listing" id={listingId} className="w-full justify-center" />
         </div>
 
         {description && (
@@ -260,31 +248,16 @@ export function ListingActions({
               <MessageCircle className="h-5 w-5" />
               {t("listings.contact")}
             </Button>
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                variant="outline"
-                onClick={toggle}
-                disabled={pending}
-                className="gap-2 rounded-full"
-              >
-                <Bookmark className="h-4 w-4" fill={saved ? "currentColor" : "none"} />
-                {t("listings.save")}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (navigator.share) {
-                    navigator.share({ title, url: window.location.href }).catch(() => {});
-                  } else {
-                    navigator.clipboard?.writeText(window.location.href);
-                  }
-                }}
-                className="gap-2 rounded-full"
-              >
-                <Share2 className="h-4 w-4" />
-                {t("common.share")}
-              </Button>
-            </div>
+            <Button
+              variant="outline"
+              onClick={toggle}
+              disabled={pending}
+              className="w-full gap-2 rounded-full"
+            >
+              <Bookmark className="h-4 w-4" fill={saved ? "currentColor" : "none"} />
+              {t("listings.save")}
+            </Button>
+            <ShareButtons type="listing" id={listingId} />
           </div>
         </div>
 

@@ -8,6 +8,7 @@ import messagesRouter from "./messages";
 import notificationsRouter from "./notifications";
 import newsRouter from "./news";
 import adminRouter from "./admin";
+import shareRouter from "./share";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(messagesRouter);
 router.use(notificationsRouter);
 router.use(newsRouter);
 router.use(adminRouter);
+router.use(shareRouter);
 
 export default router;

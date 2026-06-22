@@ -3,6 +3,27 @@ import { logger } from "./lib/logger";
 import { ensureDefaults, getSetting } from "./lib/settings";
 import { startJobWorkers, scheduleNewsIngestion } from "./lib/jobQueue";
 
+// ─── Startup environment validation ──────────────────────────────────────────
+const REQUIRED_ENV: string[] = ["DATABASE_URL", "PORT"];
+const PRODUCTION_ENV: string[] = ["BETTER_AUTH_SECRET"];
+
+const missing = REQUIRED_ENV.filter((k) => !process.env[k]);
+if (missing.length > 0) {
+  throw new Error(
+    `Missing required environment variable(s): ${missing.join(", ")}. ` +
+    `Set them before starting the server.`,
+  );
+}
+
+if (process.env.NODE_ENV === "production") {
+  const missingProd = PRODUCTION_ENV.filter((k) => !process.env[k]);
+  if (missingProd.length > 0) {
+    throw new Error(
+      `Missing production-required environment variable(s): ${missingProd.join(", ")}.`,
+    );
+  }
+}
+
 const rawPort = process.env["PORT"];
 
 if (!rawPort) {

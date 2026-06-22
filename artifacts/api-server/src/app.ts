@@ -13,6 +13,8 @@ import { auth } from "./lib/betterAuth";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { authMiddleware } from "./middlewares/authMiddleware";
+import { pool } from "@workspace/db";
+import { PostgresRateLimitStore } from "./lib/rateLimitStore";
 
 const app: Express = express();
 
@@ -87,6 +89,7 @@ const generalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: RATE_LIMIT_BODY,
+  store: new PostgresRateLimitStore(pool, 60 * 1_000),
 });
 
 /** Tight limiter: 20 requests / minute / IP for expensive write routes */
@@ -96,6 +99,7 @@ const writeLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: RATE_LIMIT_BODY,
+  store: new PostgresRateLimitStore(pool, 60 * 1_000),
 });
 
 /** Auth limiter: 10 requests / minute / IP for auth routes (login, register, reset) */
@@ -105,6 +109,7 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: RATE_LIMIT_BODY,
+  store: new PostgresRateLimitStore(pool, 60 * 1_000),
 });
 
 // Auth limiter for sensitive auth endpoints

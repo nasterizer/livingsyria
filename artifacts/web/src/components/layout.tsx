@@ -379,6 +379,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
         )}
       </header>
 
+      {isAuthenticated && (user as { emailVerified?: boolean })?.emailVerified === false && (
+        <div className="w-full bg-amber-500/10 border-b border-amber-500/30 text-amber-700 dark:text-amber-400 text-sm px-4 py-2.5 text-center">
+          {locale === "ar"
+            ? "📧 يرجى تأكيد بريدك الإلكتروني للاستفادة من جميع المميزات. تحقق من صندوق الوارد لديك."
+            : "📧 Please verify your email address to unlock all features. Check your inbox for a verification link."}
+        </div>
+      )}
+
       <main className="flex-1 w-full relative">{children}</main>
 
       <footer

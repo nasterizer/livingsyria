@@ -229,6 +229,15 @@ router.post("/listings", async (req: Request, res: Response) => {
     res.status(401).json({ error: "Authentication required" });
     return;
   }
+
+  if (!req.user.emailVerified) {
+    res.status(403).json({
+      error: "email_not_verified",
+      message: "Please verify your email address before posting listings.",
+    });
+    return;
+  }
+
   const parsed = CreateListingBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -522,6 +531,69 @@ router.patch("/listings/:id", async (req: Request, res: Response) => {
   }
 
   res.json({ data: updated });
+});
+
+// ─── DELETE /listings/:id — owner removes their own listing ──────────────────
+router.delete("/listings/:id", async (req: Request, res: Response) => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+
+  const [listing] = await db
+    .select({
+      id: listingsTable.id,
+      userId: listingsTable.userId,
+      titleAr: listingsTable.titleAr,
+      titleEn: listingsTable.titleEn,
+    })
+    .from(listingsTable)
+    .where(eq(listingsTable.id, String(req.params.id)))
+    .limit(1);
+
+  if (!listing) {
+    res.status(404).json({ error: "Listing not found" });
+    return;
+  }
+
+  if (listing.userId !== req.user.id) {
+    res.status(403).json({ error: "Forbidden — you can only delete your own listings" });
+    return;
+  }
+
+  // Notify saved-listing followers before deleting (fire-and-forget)
+  const notifEnabled = await getSetting<boolean>("notifications.enabled", true);
+  if (notifEnabled) {
+    db.select({ userId: savedListingsTable.userId })
+      .from(savedListingsTable)
+      .where(eq(savedListingsTable.listingId, listing.id))
+      .then((savers) => {
+        if (savers.length === 0) return;
+        return db.insert(notificationsTable).values(
+          savers.map((s) => ({
+            userId: s.userId,
+            type: "saved_listing_removed",
+            titleAr: `تم حذف إعلان محفوظ: ${listing.titleAr}`,
+            titleEn: `A saved listing was removed: ${listing.titleEn ?? listing.titleAr}`,
+            listingId: listing.id,
+          })),
+        );
+      })
+      .catch(() => {});
+  }
+
+  // Delete images, saved entries, then the listing itself
+  await db
+    .delete(listingImagesTable)
+    .where(eq(listingImagesTable.listingId, listing.id));
+  await db
+    .delete(savedListingsTable)
+    .where(eq(savedListingsTable.listingId, listing.id));
+  await db
+    .delete(listingsTable)
+    .where(eq(listingsTable.id, listing.id));
+
+  res.json({ data: { ok: true } });
 });
 
 export default router;

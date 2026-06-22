@@ -39,6 +39,7 @@ export async function authMiddleware(
       req.user = {
         id: session.user.id,
         email: session.user.email,
+        emailVerified: session.user.emailVerified ?? false,
         firstName,
         lastName,
         profileImageUrl: session.user.image ?? null,
@@ -62,8 +63,9 @@ export async function authMiddleware(
             name: string;
             email: string;
             image: string | null;
+            email_verified: boolean | null;
           }>(
-            `SELECT u.id, u.name, u.email, u.image
+            `SELECT u.id, u.name, u.email, u.image, u.email_verified
              FROM session s
              JOIN "user" u ON u.id = s.user_id
              WHERE s.token = $1 AND s.expires_at > NOW()
@@ -76,6 +78,7 @@ export async function authMiddleware(
             req.user = {
               id: row.id,
               email: row.email,
+              emailVerified: row.email_verified ?? false,
               firstName,
               lastName,
               profileImageUrl: row.image ?? null,

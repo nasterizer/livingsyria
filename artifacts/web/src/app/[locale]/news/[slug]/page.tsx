@@ -1,16 +1,17 @@
 import type { Metadata } from "next";
 import { apiFetch } from "@/lib/api";
 import { formatDate } from "@/lib/format";
-import { absoluteImageUrl } from "@/lib/image";
 import { getAppUrl } from "@/lib/seo";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ExternalLink, ArrowRight, ArrowLeft } from "lucide-react";
+import { ShareButtons } from "@/components/ShareButtons";
 
 type Locale = "ar" | "en";
 
 type Article = {
+  id: string;
   titleAr: string;
   titleEn?: string | null;
   summaryAr?: string | null;
@@ -53,9 +54,9 @@ export async function generateMetadata({
       : article.aiSummaryEn || article.aiSummaryAr || article.summaryAr
   )?.substring(0, 155);
 
-  const ogImage = absoluteImageUrl(article.coverImageUrl ?? null);
   const appUrl = getAppUrl();
   const slug = params.slug;
+  const ogImage = `${appUrl}/og?type=article&slug=${encodeURIComponent(slug)}`;
 
   return {
     title,
@@ -70,7 +71,7 @@ export async function generateMetadata({
     openGraph: {
       title,
       description,
-      images: ogImage ? [{ url: ogImage }] : [],
+      images: [{ url: ogImage, width: 1200, height: 630, alt: title }],
       type: "article",
       publishedTime: article.publishedAt,
       siteName: "LivingSyria",
@@ -79,7 +80,7 @@ export async function generateMetadata({
       card: "summary_large_image",
       title,
       description,
-      images: ogImage ? [ogImage] : undefined,
+      images: [ogImage],
     },
   };
 }
@@ -219,16 +220,17 @@ export default async function NewsDetailPage({
               </div>
             )}
 
-            {article.sourceUrl && (
-              <div className="mt-12 pt-8 border-t border-border/50 text-center">
+            <div className="mt-12 pt-8 border-t border-border/50 flex flex-wrap items-center justify-between gap-4">
+              <ShareButtons type="article" id={article.id} />
+              {article.sourceUrl && (
                 <Button variant="outline" asChild className="gap-2">
                   <a href={article.sourceUrl} target="_blank" rel="noopener noreferrer">
                     {locale === "ar" ? "المصدر" : "Source"}
                     <ExternalLink className="h-4 w-4" />
                   </a>
                 </Button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </article>

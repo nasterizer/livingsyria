@@ -69,9 +69,9 @@ export async function generateMetadata({
       : listing.descriptionEn || listing.descriptionAr
   )?.substring(0, 155);
 
-  const ogImage = absoluteImageUrl(listing.primaryImageUrl);
   const appUrl = getAppUrl();
   const slug = params.slug;
+  const ogImage = `${appUrl}/og?type=listing&slug=${encodeURIComponent(slug)}`;
 
   return {
     title,
@@ -86,7 +86,7 @@ export async function generateMetadata({
     openGraph: {
       title,
       description,
-      images: ogImage ? [{ url: ogImage }] : [],
+      images: [{ url: ogImage, width: 1200, height: 630, alt: title }],
       type: "website",
       siteName: "LivingSyria",
     },
@@ -94,7 +94,7 @@ export async function generateMetadata({
       card: "summary_large_image",
       title,
       description,
-      images: ogImage ? [ogImage] : undefined,
+      images: [ogImage],
     },
   };
 }
